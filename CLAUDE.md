@@ -26,16 +26,18 @@ Two documents define the project:
 - **M0 (scaffold) is done.** The workspace builds, `pnpm check` passes, and
   the app launches and shows an About panel whose details come from the Rust
   core through the generated IPC bindings.
-- **No show features exist yet.** The seven crates under `crates/` are
-  documented stubs with no code. The next milestone is M1.
+- **M1 is in progress.** `selah-core` has the domain types (ids, `Show`,
+  `Item`, `Cue`, `CueKind` with audio, fade, stop, pause, go-to, arm, group
+  and memo, `Patch`) and a `validate` function, with tests. The other six
+  crates are still documented stubs. Next: the cue engine, then audio,
+  persistence, and the control UI, which can run in parallel.
 - **What has been verified.** On Linux: the full gate, a production build,
   the dev workflow, and a launch on a virtual display. On Windows, in CI only:
   the full gate and a build of the app. Nobody has yet launched the app on a
   real Windows machine, so its appearance and behaviour there are untested.
-- **There is no `main` branch yet.** M0 was pushed to a session branch, which
-  is the repository's only branch. CI's push trigger and the branch rules
-  below assume `main`; until the owner creates it, branch from the latest
-  commit that contains this file.
+- **`main` exists** (created 2026-11-12 from the M0 commit). Sessions in
+  restricted environments may still be limited to an assigned branch; see
+  [Branches and commits](#branches-and-commits).
 
 ## Who it is for
 
@@ -591,7 +593,7 @@ and its release plan gives the exit criteria.
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 Scaffold | Workspace, Tauri shell, React app, generated bindings, `pnpm check`, CI | done |
-| M1 Cue engine and audio | Core types, cue engine, show files and autosave, audio cues, fades, patches, panic, cue list and inspector, show mode | not started |
+| M1 Cue engine and audio | Core types (done), cue engine, show files and autosave, audio cues, fades, patches, panic, cue list and inspector, show mode | in progress |
 | M2 Lyrics and outputs | Song library and import, lyrics and scripture cues, quick show, looks and text fitting, main and stage outputs, layers and clears, timers, preflight | not started |
 | M3 Video and media | ffmpeg sidecar, import and optimise, video and image cues, slide decks and loops, backgrounds, lower third, cue cart | not started |
 | M4 Multitracks | Track cues with stems, click and guide routing, sections, lyrics that follow tracks, pads, ASIO | not started |

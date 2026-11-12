@@ -4,6 +4,17 @@
 //! async, and dependencies on any other `selah-*` crate, so that everything
 //! above it can be tested without devices, files, or a runtime.
 //!
-//! Nothing is implemented yet; see the roadmap in `CLAUDE.md`.
+//! Everything here serialises with camelCase names; see "IPC contract" in
+//! `CLAUDE.md`. Time is in seconds (`f64`) and levels in dB at this boundary.
 
 #![forbid(unsafe_code)]
+
+mod cue;
+mod id;
+mod show;
+mod validate;
+
+pub use cue::{Cue, CueKind, Decibels, FadeCurve, Follow, GroupMode, Seconds};
+pub use id::{CueId, ItemId, PatchId};
+pub use show::{CURRENT_SCHEMA_VERSION, Item, ItemKind, Patch, Show, ShowMeta};
+pub use validate::{Issue, IssueKind, validate};
