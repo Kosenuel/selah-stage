@@ -32,11 +32,22 @@ Two documents define the project:
   and arm cues, panic with a second-press hard stop, reset, missing-media
   warnings, events). The engine is driven by the `Clock` and `AudioSink`
   traits; `selah_engine::testing` has `FakeClock` and `RecordingSink`.
-  Still to do in M1: the undoable edit stack and live editing in the engine,
-  show files and autosave (`selah-persist`), the audio engine (`selah-audio`,
-  which implements `AudioSink`), IPC commands and events that expose the
-  engine, and the control UI (cue list, inspector, show mode). The last
-  three groups can run in parallel.
+  `selah-audio` is built: a real-time `Mixer` (voices, sample-accurate fades,
+  pause ramps, per-channel peak meters, no allocation in the callback), a
+  streaming decoder and resampler (symphonia and rubato, one worker thread per
+  playing cue), patch routing, an `AudioEngine` that implements
+  `selah_engine::AudioSink`, an `OfflineBackend` for tests, and a cpal
+  `OutputDevice` (WASAPI on Windows). The cue engine plus audio engine are
+  tested end to end with real WAV files and no device.
+  Still to do in M1: the undoable edit stack and live editing in the cue
+  engine, show files and autosave (`selah-persist`), the shell wiring (a host
+  loop that ticks the engine, polls `AudioEngine`, forwards `Finished` events,
+  and owns the device), IPC commands and events, the control UI, and
+  reconnecting after a device is lost (`RunningDevice::is_lost` and
+  `AudioEngine::reattach` exist; the loop that uses them does not).
+  Not yet done in audio: a preload API so GO is instant for cues near the
+  playhead (AUD-9), loudness measurement, a preview patch, ASIO, and any test
+  on a real device. Real playback has never been heard on any machine.
 - **What has been verified.** On Linux: the full gate, a production build,
   the dev workflow, and a launch on a virtual display. On Windows, in CI only:
   the full gate and a build of the app. Nobody has yet launched the app on a
@@ -240,14 +251,21 @@ The real-time callback is the most fragile code in the project.
   tests. `CpalBackend` drives real devices. WASAPI comes first; ASIO is a later,
   feature-flagged addition (see [Licensing](#licensing-and-content-rules)).
 - Signal flow: cue channels → per-cue matrix → patches → device channels.
+  Sources are reduced to mono or stereo when decoded; wider stems arrive in M4.
+- Fades and stops follow the device's time, not the decoded samples, so a
+  starved source cannot stretch a panic.
+- A finished voice is handed back to the control thread to be dropped there;
+  never drop one in `Mixer::render`. `selah-audio` depends on `selah-engine`
+  for the `AudioSink` trait; the reverse is forbidden.
 - Fades are sample-accurate ramps with selectable curves. A device underrun or
   a device disappearing must be reported and recovered from, not fatal.
 - Meters and playback positions go to the UI on a throttled channel (about
   30 Hz), never one message per audio block.
 
-Suggested crates (confirm current versions when adding): `cpal`, `symphonia`,
-`rubato`, `rtrb`. Time-stretch and pitch-shift for multitracks is an open
-question; pick a permissively licensed library.
+Crates in use: `cpal` 0.18, `symphonia` 0.6 (MPL-2.0, allowed), `rubato` 5,
+`rtrb` 0.4. All three audio libraries changed their APIs recently; read the
+installed source, not memory. Time-stretch and pitch-shift for multitracks is
+an open question; pick a permissively licensed library.
 
 ## Video and media
 
@@ -599,7 +617,7 @@ and its release plan gives the exit criteria.
 | Milestone | Scope | Status |
 |---|---|---|
 | M0 Scaffold | Workspace, Tauri shell, React app, generated bindings, `pnpm check`, CI | done |
-| M1 Cue engine and audio | Core types (done), cue engine (done except undo), show files and autosave, audio cues, fades, patches, panic, cue list and inspector, show mode | in progress |
+| M1 Cue engine and audio | Core types (done), cue engine (done except undo), audio engine (done except preload and device recovery), show files and autosave, audio cues, fades, patches, panic, cue list and inspector, show mode | in progress |
 | M2 Lyrics and outputs | Song library and import, lyrics and scripture cues, quick show, looks and text fitting, main and stage outputs, layers and clears, timers, preflight | not started |
 | M3 Video and media | ffmpeg sidecar, import and optimise, video and image cues, slide decks and loops, backgrounds, lower third, cue cart | not started |
 | M4 Multitracks | Track cues with stems, click and guide routing, sections, lyrics that follow tracks, pads, ASIO | not started |

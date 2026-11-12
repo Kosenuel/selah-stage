@@ -190,6 +190,12 @@ impl<C: Clock, A: AudioSink> Engine<C, A> {
             .collect()
     }
 
+    /// The audio sink, so the host can poll it for things such as finished
+    /// cues and forward them to [`Engine::audio_finished`].
+    pub fn audio_mut(&mut self) -> &mut A {
+        &mut self.audio
+    }
+
     pub fn take_events(&mut self) -> Vec<Event> {
         std::mem::take(&mut self.events)
     }

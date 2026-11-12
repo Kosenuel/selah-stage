@@ -62,7 +62,8 @@ pub enum CueKind {
         /// Where in the file playback starts and ends, in seconds.
         start: Seconds,
         end: Option<Seconds>,
-        /// `None` plays once; `Some(0)` loops forever.
+        /// How many times the trimmed region plays. `None` and `Some(1)` play
+        /// once, `Some(n)` plays `n` times, and `Some(0)` loops forever.
         loops: Option<u32>,
         fade_in: Seconds,
         fade_out: Seconds,

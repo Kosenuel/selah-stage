@@ -13,3 +13,13 @@ workspace = true
 
 [dependencies]
 selah-core = { workspace = true }
+cpal = { workspace = true }
+rtrb = { workspace = true }
+rubato = { workspace = true }
+selah-engine = { workspace = true }
+symphonia = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hound = { workspace = true }

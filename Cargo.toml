@@ -24,6 +24,11 @@ selah-persist = { path = "crates/selah-persist" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+cpal = "0.18"
+hound = "3"
+rtrb = "0.4"
+rubato = "5"
+symphonia = { version = "0.6", default-features = false, features = ["flac", "mp3", "aac", "isomp4", "ogg", "vorbis", "wav", "pcm", "aiff"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 tracing = "0.1"
 
