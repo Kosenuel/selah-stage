@@ -5,9 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use selah_core::CueId;
+use selah_core::{CueChange, CueId, Edit, EditError, NewAudio};
 use selah_engine::CueState;
-use selah_host::{Command, Host, Output, Snapshot, show_from_folder};
+use selah_host::{Command, EditFailure, Host, Output, Snapshot, show_from_folder};
 use selah_persist::{SHOW_FILE, load as load_show};
 
 fn tone_folder(tag: &str, files: &[(&str, f64)]) -> PathBuf {
@@ -138,6 +138,14 @@ fn open(host: &Host, dir: &Path) {
     }));
 }
 
+fn arm(host: &Host, cue: CueId, armed: bool) {
+    host.edit(Edit::Change {
+        id: cue,
+        change: CueChange::Armed(armed),
+    })
+    .unwrap();
+}
+
 fn cue_id(snapshot: &Snapshot, index: usize) -> CueId {
     CueId::from_uuid(snapshot.cues[index].id.parse().unwrap())
 }
@@ -171,10 +179,7 @@ fn an_edit_to_an_opened_show_is_autosaved() {
     host.send(Command::SaveShow);
     let saved = wait_for(&host, "the save", |s| s.location.is_some());
 
-    host.send(Command::SetArmed {
-        cue: cue_id(&saved, 0),
-        armed: false,
-    });
+    arm(&host, cue_id(&saved, 0), false);
 
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -199,10 +204,7 @@ fn a_disarmed_cue_is_skipped_but_the_playhead_moves_on() {
     load(&host, &dir);
     let loaded = wait_for(&host, "the show to load", |s| s.cues.len() == 2);
 
-    host.send(Command::SetArmed {
-        cue: cue_id(&loaded, 0),
-        armed: false,
-    });
+    arm(&host, cue_id(&loaded, 0), false);
     host.send(Command::Go);
 
     let after = wait_for(&host, "the skip", |s| s.cues[0].state == CueState::Done);
@@ -238,10 +240,7 @@ fn a_recovered_show_says_so() {
     let loaded = wait_for(&host, "the show to load", |s| !s.cues.is_empty());
     host.send(Command::SaveShow);
     wait_for(&host, "the save", |s| s.location.is_some());
-    host.send(Command::SetArmed {
-        cue: cue_id(&loaded, 0),
-        armed: false,
-    });
+    arm(&host, cue_id(&loaded, 0), false);
     // Wait for the autosave to make a backup, then damage the main file.
     let deadline = Instant::now() + Duration::from_secs(5);
     while !dir.join("backups").is_dir() {
@@ -256,4 +255,157 @@ fn a_recovered_show_says_so() {
     let snapshot = wait_for(&second, "the notice", |s| s.notice.is_some());
 
     assert!(snapshot.notice.unwrap().contains("backup"));
+}
+
+fn loaded_host(tag: &str, files: &[(&str, f64)]) -> (Host, PathBuf, Snapshot) {
+    let dir = tone_folder(tag, files);
+    let host = Host::spawn(Output::Silent { channels: 2 }).unwrap();
+    load(&host, &dir);
+    let snapshot = wait_for(&host, "the show to load", |s| s.cues.len() == files.len());
+    (host, dir, snapshot)
+}
+
+#[test]
+fn adding_a_cue_shows_up_and_becomes_playable() {
+    let (host, dir, loaded) = loaded_host("add", &[("a.wav", 0.2)]);
+    write_tone(&dir.join("b.wav"), 0.2);
+
+    let outcome = host
+        .edit(Edit::AddAudio {
+            files: vec![NewAudio {
+                file: "b.wav".into(),
+                name: "b".into(),
+            }],
+            before: None,
+        })
+        .unwrap();
+
+    assert_eq!(outcome.created.len(), 1);
+    let after = wait_for(&host, "the new cue", |s| s.cues.len() == 2);
+    assert_eq!(after.cues[1].name, "b");
+    assert_eq!(after.cues[1].audio.as_ref().unwrap().file, "b.wav");
+    assert_eq!(after.cues[0].id, loaded.cues[0].id);
+
+    host.send(Command::Go);
+    // A second press inside the double-press window would be ignored.
+    std::thread::sleep(Duration::from_millis(450));
+    host.send(Command::Go);
+    wait_for(&host, "both cues to have run", |s| {
+        s.cues
+            .iter()
+            .all(|c| matches!(c.state, CueState::Running | CueState::Done))
+    });
+}
+
+#[test]
+fn undo_and_redo_restore_the_cue_list() {
+    let (host, _dir, loaded) = loaded_host("undo", &[("a.wav", 0.2), ("b.wav", 0.2)]);
+    assert!(!loaded.can_undo);
+
+    host.edit(Edit::Delete {
+        ids: vec![cue_id(&loaded, 0)],
+    })
+    .unwrap();
+    let deleted = wait_for(&host, "the delete", |s| s.cues.len() == 1);
+    assert!(deleted.can_undo);
+
+    host.undo().unwrap();
+    let restored = wait_for(&host, "the undo", |s| s.cues.len() == 2);
+    assert_eq!(
+        restored.cues[0].id, loaded.cues[0].id,
+        "the same cue comes back"
+    );
+    assert!(restored.can_redo);
+
+    host.redo().unwrap();
+    wait_for(&host, "the redo", |s| s.cues.len() == 1);
+}
+
+#[test]
+fn bad_values_are_refused_with_a_plain_message() {
+    let (host, _dir, loaded) = loaded_host("invalid", &[("a.wav", 0.2)]);
+
+    let result = host.edit(Edit::Change {
+        id: cue_id(&loaded, 0),
+        change: CueChange::PreWait(-3.0),
+    });
+
+    assert!(matches!(
+        result,
+        Err(EditFailure::Invalid(EditError::InvalidValue(_)))
+    ));
+    assert_eq!(host.snapshot().cues[0].pre_wait, 0.0);
+}
+
+#[test]
+fn show_mode_locks_out_edits_and_edit_mode_allows_them_again() {
+    let (host, _dir, loaded) = loaded_host("locked", &[("a.wav", 0.2)]);
+    let edit = |host: &Host| {
+        host.edit(Edit::Change {
+            id: cue_id(&loaded, 0),
+            change: CueChange::Notes("hello".into()),
+        })
+    };
+
+    host.send(Command::SetEditing(false));
+    wait_for(&host, "show mode", |s| !s.editing);
+    assert_eq!(edit(&host), Err(EditFailure::Locked));
+    assert_eq!(host.undo(), Err(EditFailure::Locked));
+
+    host.send(Command::SetEditing(true));
+    assert!(edit(&host).is_ok());
+    wait_for(&host, "the note", |s| s.cues[0].notes == "hello");
+}
+
+#[test]
+fn editing_with_no_show_open_says_so() {
+    let host = Host::spawn(Output::Silent { channels: 2 }).unwrap();
+    assert_eq!(host.edit(Edit::Renumber), Err(EditFailure::NoShow));
+}
+
+#[test]
+fn an_edit_during_playback_does_not_stop_the_sound() {
+    let (host, _dir, loaded) = loaded_host("live", &[("long.wav", 5.0), ("b.wav", 0.2)]);
+    host.send(Command::Go);
+    wait_for(&host, "the cue to run", |s| {
+        s.cues[0].state == CueState::Running
+    });
+
+    host.edit(Edit::Change {
+        id: cue_id(&loaded, 1),
+        change: CueChange::Name("renamed".into()),
+    })
+    .unwrap();
+
+    let after = wait_for(&host, "the rename", |s| s.cues[1].name == "renamed");
+    assert_eq!(after.cues[0].state, CueState::Running);
+}
+
+#[test]
+fn edits_to_a_saved_show_are_autosaved_and_undo_is_saved_too() {
+    let (host, dir, loaded) = loaded_host("editsave", &[("a.wav", 0.2)]);
+    host.send(Command::SaveShow);
+    wait_for(&host, "the save", |s| s.location.is_some());
+
+    host.edit(Edit::Change {
+        id: cue_id(&loaded, 0),
+        change: CueChange::Name("Opening".into()),
+    })
+    .unwrap();
+    wait_until("the rename on disk", || {
+        load_show(&dir).unwrap().show.all_cues()[0].name == "Opening"
+    });
+
+    host.undo().unwrap();
+    wait_until("the undo on disk", || {
+        load_show(&dir).unwrap().show.all_cues()[0].name == "a"
+    });
+}
+
+fn wait_until(what: &str, check: impl Fn() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !check() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }

@@ -23,8 +23,30 @@ export const commands = {
 	openShow: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("open_show", { path })),
 	/**  Saves the show now. The first save also turns on autosave. */
 	saveShow: () => typedError<null, AppError>(__TAURI_INVOKE("save_show")),
-	/**  Arms or disarms a cue. */
-	setArmed: (cue: string, armed: boolean) => typedError<null, AppError>(__TAURI_INVOKE("set_armed", { cue, armed })),
+	editCue: (cue: string, change: CueChangeInput_Deserialize) => typedError<null, AppError>(__TAURI_INVOKE("edit_cue", { cue, change })),
+	deleteCues: (cues: string[]) => typedError<null, AppError>(__TAURI_INVOKE("delete_cues", { cues })),
+	/**  Moves a cue to just before `before`, or to the end. */
+	moveCue: (cue: string, before: string | null) => typedError<null, AppError>(__TAURI_INVOKE("move_cue", { cue, before })),
+	/**  Returns the id of the copy. */
+	duplicateCue: (cue: string) => typedError<string[], AppError>(__TAURI_INVOKE("duplicate_cue", { cue })),
+	/**  Adds a note-only cue. Returns its id. */
+	addMemo: (before: string | null) => typedError<string[], AppError>(__TAURI_INVOKE("add_memo", { before })),
+	/**
+	 *  Adds the chosen audio files as cues, copying any that are outside the show
+	 *  folder into it. Returns the new cue ids.
+	 */
+	addAudio: (paths: string[], before: string | null) => typedError<string[], AppError>(__TAURI_INVOKE("add_audio", { paths, before })),
+	renumberCues: () => typedError<null, AppError>(__TAURI_INVOKE("renumber_cues")),
+	undo: () => typedError<null, AppError>(__TAURI_INVOKE("undo")),
+	redo: () => typedError<null, AppError>(__TAURI_INVOKE("redo")),
+	/**  Edit mode allows changes; show mode locks them out. */
+	setEditing: (editing: boolean) => typedError<null, AppError>(__TAURI_INVOKE("set_editing", { editing })),
+	/**  Creates an empty show in a folder and opens it. */
+	newShow: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("new_show", { path })),
+	/**  Asks the operator for a folder. `None` means they cancelled. */
+	pickFolder: (title: string) => typedError<string | null, AppError>(__TAURI_INVOKE("pick_folder", { title })),
+	/**  Asks the operator for audio files. An empty list means they cancelled. */
+	pickAudioFiles: () => typedError<string[], AppError>(__TAURI_INVOKE("pick_audio_files")),
 };
 
 /* Types */
@@ -97,17 +119,92 @@ export type AppInfo_Serialize = {
 	debugBuild: boolean,
 };
 
+export type AudioView = AudioView_Serialize | AudioView_Deserialize;
+
+export type AudioView_Deserialize = {
+	/**  Path relative to the show folder. */
+	file: string,
+	/**  Decibels. */
+	level: number | null,
+	/**  Where in the file playback starts and ends, in seconds. */
+	start: number | null,
+	end?: number | null,
+	/**  `null` or 1 plays once, `n` plays `n` times, 0 loops forever. */
+	loops?: number | null,
+	fadeIn: number | null,
+	fadeOut: number | null,
+	curve: CurveKind,
+};
+
+export type AudioView_Serialize = {
+	/**  Path relative to the show folder. */
+	file: string,
+	/**  Decibels. */
+	level: number | null,
+	/**  Where in the file playback starts and ends, in seconds. */
+	start: number | null,
+	end: number | null,
+	/**  `null` or 1 plays once, `n` plays `n` times, 0 loops forever. */
+	loops: number | null,
+	fadeIn: number | null,
+	fadeOut: number | null,
+	curve: CurveKind,
+};
+
+/**  One property of a cue, and its new value. */
+export type CueChangeInput = CueChangeInput_Serialize | CueChangeInput_Deserialize;
+
+/**  One property of a cue, and its new value. */
+export type CueChangeInput_Deserialize = { type: "name"; value: string } | { type: "number"; value: string } | { type: "notes"; value: string } | { type: "armed"; value: boolean } | { type: "preWait"; value: number | null } | { type: "postWait"; value: number | null } | { type: "follow"; value: FollowMode } | 
+/**  Decibels. Audio cues only. */
+{ type: "level"; value: number | null } | { type: "start"; value: number | null } | { type: "end"; value?: number | null } | { type: "loops"; value?: number | null } | { type: "fadeIn"; value: number | null } | { type: "fadeOut"; value: number | null } | { type: "curve"; value: CurveKind };
+
+/**  One property of a cue, and its new value. */
+export type CueChangeInput_Serialize = { type: "name"; value: string } | { type: "number"; value: string } | { type: "notes"; value: string } | { type: "armed"; value: boolean } | { type: "preWait"; value: number | null } | { type: "postWait"; value: number | null } | { type: "follow"; value: FollowMode } | 
+/**  Decibels. Audio cues only. */
+{ type: "level"; value: number | null } | { type: "start"; value: number | null } | { type: "end"; value: number | null } | { type: "loops"; value: number | null } | { type: "fadeIn"; value: number | null } | { type: "fadeOut"; value: number | null } | { type: "curve"; value: CurveKind };
+
 /**  Where a cue is in its life, as the UI names it. */
 export type CueStatus = "idle" | "waiting" | "running" | "paused" | "done" | "stopped";
 
-export type CueView = {
+export type CueView = CueView_Serialize | CueView_Deserialize;
+
+export type CueView_Deserialize = {
 	id: string,
 	number: string,
 	name: string,
 	status: CueStatus,
 	/**  A disarmed cue does nothing when it is reached, but GO still moves on. */
 	armed: boolean,
+	notes: string,
+	/**  Seconds to wait after the cue is fired before it starts. */
+	preWait: number | null,
+	/**  Seconds after it starts before a "continue" cue starts the next one. */
+	postWait: number | null,
+	follow: FollowMode,
+	/**  Present for audio cues. */
+	audio?: AudioView_Deserialize | null,
 };
+
+export type CueView_Serialize = {
+	id: string,
+	number: string,
+	name: string,
+	status: CueStatus,
+	/**  A disarmed cue does nothing when it is reached, but GO still moves on. */
+	armed: boolean,
+	notes: string,
+	/**  Seconds to wait after the cue is fired before it starts. */
+	preWait: number | null,
+	/**  Seconds after it starts before a "continue" cue starts the next one. */
+	postWait: number | null,
+	follow: FollowMode,
+	/**  Present for audio cues. */
+	audio: AudioView_Serialize | null,
+};
+
+/**  The shape of a fade. */
+export type CurveKind = "linear" | "equalPower" | "sCurve";
 
 export type DeviceView = DeviceView_Serialize | DeviceView_Deserialize;
 
@@ -131,13 +228,22 @@ export type DeviceView_Serialize = {
 	problem: string | null,
 };
 
+/**  What happens to the next cue. */
+export type FollowMode = 
+/**  Wait for the operator's next GO. */
+"none" | 
+/**  Start the next cue when this one starts. */
+"continue" | 
+/**  Start the next cue when this one finishes. */
+"follow";
+
 /**  Everything the control window shows about the running service. */
 export type ServiceView = ServiceView_Serialize | ServiceView_Deserialize;
 
 /**  Everything the control window shows about the running service. */
 export type ServiceView_Deserialize = {
 	title: string,
-	cues: CueView[],
+	cues: CueView_Deserialize[],
 	/**  The cue that fires on the next GO. */
 	playhead?: string | null,
 	warnings: WarningView[],
@@ -151,12 +257,18 @@ export type ServiceView_Deserialize = {
 	saveProblem?: string | null,
 	/**  Something to tell the operator about how the show was opened. */
 	notice?: string | null,
+	/**  The folder the show's media lives in, once a show is open. */
+	mediaRoot?: string | null,
+	/**  False in show mode, when changes are locked out. */
+	editing: boolean,
+	canUndo: boolean,
+	canRedo: boolean,
 };
 
 /**  Everything the control window shows about the running service. */
 export type ServiceView_Serialize = {
 	title: string,
-	cues: CueView[],
+	cues: CueView_Serialize[],
 	/**  The cue that fires on the next GO. */
 	playhead: string | null,
 	warnings: WarningView[],
@@ -170,6 +282,12 @@ export type ServiceView_Serialize = {
 	saveProblem: string | null,
 	/**  Something to tell the operator about how the show was opened. */
 	notice: string | null,
+	/**  The folder the show's media lives in, once a show is open. */
+	mediaRoot: string | null,
+	/**  False in show mode, when changes are locked out. */
+	editing: boolean,
+	canUndo: boolean,
+	canRedo: boolean,
 };
 
 export type WarningView = {
@@ -199,7 +317,19 @@ export type MockCommandHandlers = {
     resetShow: () => null | Promise<null>,
     openShow: (args: { path: string }) => null | Promise<null>,
     saveShow: () => null | Promise<null>,
-    setArmed: (args: { cue: string; armed: boolean }) => null | Promise<null>,
+    editCue: (args: { cue: string; change: CueChangeInput_Deserialize }) => null | Promise<null>,
+    deleteCues: (args: { cues: string[] }) => null | Promise<null>,
+    moveCue: (args: { cue: string; before: string | null }) => null | Promise<null>,
+    duplicateCue: (args: { cue: string }) => string[] | Promise<string[]>,
+    addMemo: (args: { before: string | null }) => string[] | Promise<string[]>,
+    addAudio: (args: { paths: string[]; before: string | null }) => string[] | Promise<string[]>,
+    renumberCues: () => null | Promise<null>,
+    undo: () => null | Promise<null>,
+    redo: () => null | Promise<null>,
+    setEditing: (args: { editing: boolean }) => null | Promise<null>,
+    newShow: (args: { path: string }) => null | Promise<null>,
+    pickFolder: (args: { title: string }) => string | null | Promise<string | null>,
+    pickAudioFiles: () => string[] | Promise<string[]>,
 };
 
 /**
@@ -235,7 +365,19 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "reset_show": return mockCommandHandler(mockHandlers.resetShow, "reset_show", args);
             case "open_show": return mockCommandHandler(mockHandlers.openShow, "open_show", args);
             case "save_show": return mockCommandHandler(mockHandlers.saveShow, "save_show", args);
-            case "set_armed": return mockCommandHandler(mockHandlers.setArmed, "set_armed", args);
+            case "edit_cue": return mockCommandHandler(mockHandlers.editCue, "edit_cue", args);
+            case "delete_cues": return mockCommandHandler(mockHandlers.deleteCues, "delete_cues", args);
+            case "move_cue": return mockCommandHandler(mockHandlers.moveCue, "move_cue", args);
+            case "duplicate_cue": return mockCommandHandler(mockHandlers.duplicateCue, "duplicate_cue", args);
+            case "add_memo": return mockCommandHandler(mockHandlers.addMemo, "add_memo", args);
+            case "add_audio": return mockCommandHandler(mockHandlers.addAudio, "add_audio", args);
+            case "renumber_cues": return mockCommandHandler(mockHandlers.renumberCues, "renumber_cues", args);
+            case "undo": return mockCommandHandler(mockHandlers.undo, "undo", args);
+            case "redo": return mockCommandHandler(mockHandlers.redo, "redo", args);
+            case "set_editing": return mockCommandHandler(mockHandlers.setEditing, "set_editing", args);
+            case "new_show": return mockCommandHandler(mockHandlers.newShow, "new_show", args);
+            case "pick_folder": return mockCommandHandler(mockHandlers.pickFolder, "pick_folder", args);
+            case "pick_audio_files": return mockCommandHandler(mockHandlers.pickAudioFiles, "pick_audio_files", args);
             default: throw new Error(`No mock handler registered for command '${cmd}'`);
         }
     }, { shouldMockEvents: true });

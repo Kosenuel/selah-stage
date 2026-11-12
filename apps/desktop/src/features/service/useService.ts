@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { commands, type AppError, type ServiceView } from "@/lib/bindings";
+import {
+  commands,
+  type AppError,
+  type CueChangeInput_Deserialize as CueChange,
+  type ServiceView_Serialize as ServiceView,
+} from "@/lib/bindings";
 import { call, type CommandResult } from "@/lib/ipc";
 
 /** How often the control window asks the core what is happening. */
@@ -15,10 +20,26 @@ export interface Service {
   skip: () => void;
   panic: () => void;
   reset: () => void;
-  loadFolder: (path: string) => void;
-  openShow: (path: string) => void;
   saveShow: () => void;
-  setArmed: (cue: string, armed: boolean) => void;
+  undo: () => void;
+  redo: () => void;
+  setEditing: (editing: boolean) => void;
+  /** Asks for a folder, then opens the show in it. */
+  openShow: () => void;
+  /** Asks for a folder, then creates an empty show in it. */
+  newShow: () => void;
+  /** Asks for a folder of audio files and loads them as cues, unsaved. */
+  loadFolder: () => void;
+  /** Resolve to `true` if the core accepted the change. */
+  edit: (cue: string, change: CueChange) => Promise<boolean>;
+  deleteCues: (cues: string[]) => Promise<boolean>;
+  moveCue: (cue: string, before: string | null) => Promise<boolean>;
+  renumber: () => Promise<boolean>;
+  /** Resolve to the ids of what was created, so the caller can select them. */
+  duplicateCue: (cue: string) => Promise<string[]>;
+  addMemo: (before: string | null) => Promise<string[]>;
+  /** Asks for audio files, then adds them as cues before `before`. */
+  addAudio: (before: string | null) => Promise<string[]>;
 }
 
 /**
@@ -57,45 +78,100 @@ export function useService(): Service {
     };
   }, [refresh]);
 
-  const act = useCallback(
-    (action: () => Promise<CommandResult<null>>) => {
-      void action().then((result) => {
-        if (!mounted.current) {
-          return;
-        }
-        setActionError(result.status === "error" ? result.error : null);
-        void refresh();
-      });
+  /** Runs an action, records its error, and refreshes. `null` if unmounted. */
+  const attempt = useCallback(
+    async <T>(action: () => Promise<CommandResult<T>>): Promise<CommandResult<T> | null> => {
+      const result = await action();
+      if (!mounted.current) {
+        return null;
+      }
+      setActionError(result.status === "error" ? result.error : null);
+      void refresh();
+      return result;
     },
     [refresh],
+  );
+
+  const fire = useCallback(
+    (action: () => Promise<CommandResult<null>>) => {
+      void attempt(action);
+    },
+    [attempt],
+  );
+  const succeeded = useCallback(
+    async (action: () => Promise<CommandResult<null>>) => (await attempt(action))?.status === "ok",
+    [attempt],
+  );
+  const created = useCallback(
+    async (action: () => Promise<CommandResult<string[]>>) => {
+      const result = await attempt(action);
+      return result?.status === "ok" ? result.data : [];
+    },
+    [attempt],
+  );
+  /** Asks for a folder, then runs `then` with it. Cancelling does nothing. */
+  const withFolder = useCallback(
+    (title: string, then: (path: string) => Promise<CommandResult<null>>) => {
+      void (async () => {
+        const picked = await attempt(() => call(commands.pickFolder(title)));
+        const path = picked?.status === "ok" ? picked.data : null;
+        if (path !== null) {
+          await attempt(() => then(path));
+        }
+      })();
+    },
+    [attempt],
   );
 
   return {
     view,
     error: pollError ?? actionError,
     go: () => {
-      act(() => call(commands.go()));
+      fire(() => call(commands.go()));
     },
     skip: () => {
-      act(() => call(commands.skip()));
+      fire(() => call(commands.skip()));
     },
     panic: () => {
-      act(() => call(commands.panicStop()));
+      fire(() => call(commands.panicStop()));
     },
     reset: () => {
-      act(() => call(commands.resetShow()));
-    },
-    loadFolder: (path) => {
-      act(() => call(commands.loadFolder(path)));
-    },
-    openShow: (path) => {
-      act(() => call(commands.openShow(path)));
+      fire(() => call(commands.resetShow()));
     },
     saveShow: () => {
-      act(() => call(commands.saveShow()));
+      fire(() => call(commands.saveShow()));
     },
-    setArmed: (cue, armed) => {
-      act(() => call(commands.setArmed(cue, armed)));
+    undo: () => {
+      fire(() => call(commands.undo()));
+    },
+    redo: () => {
+      fire(() => call(commands.redo()));
+    },
+    setEditing: (editing) => {
+      fire(() => call(commands.setEditing(editing)));
+    },
+    openShow: () => {
+      withFolder("Open a show", (path) => call(commands.openShow(path)));
+    },
+    newShow: () => {
+      withFolder("Choose an empty folder for the new show", (path) => call(commands.newShow(path)));
+    },
+    loadFolder: () => {
+      withFolder("Choose a folder of audio files", (path) => call(commands.loadFolder(path)));
+    },
+    edit: (cue, change) => succeeded(() => call(commands.editCue(cue, change))),
+    deleteCues: (cues) => succeeded(() => call(commands.deleteCues(cues))),
+    moveCue: (cue, before) => succeeded(() => call(commands.moveCue(cue, before))),
+    renumber: () => succeeded(() => call(commands.renumberCues())),
+    duplicateCue: (cue) => created(() => call(commands.duplicateCue(cue))),
+    addMemo: (before) => created(() => call(commands.addMemo(before))),
+    addAudio: async (before) => {
+      const picked = await attempt(() => call(commands.pickAudioFiles()));
+      if (picked?.status !== "ok" || picked.data.length === 0) {
+        return [];
+      }
+      const paths = picked.data;
+      return created(() => call(commands.addAudio(paths, before)));
     },
   };
 }

@@ -55,16 +55,36 @@ Two documents define the project:
   and disarming a cue). The UI has Open show, Load folder, Save show, a
   per-cue Armed checkbox, and says where the show lives and whether saving
   failed.
-  Still to do in M1: the undoable edit stack and the rest of live editing
-  (add, move, delete, rename cues; waits, levels, fades, trims), the cue
-  inspector and show mode, device settings and patch mapping, reconnecting
-  after a device is lost (detected and reported, but not recovered), a preload
-  so GO is instant (AUD-9), a recent-shows list, bundle export, and relinking
-  missing media (it is listed but not fixable yet). Not started in audio:
-  loudness measurement, a preview patch, ASIO.
+  **Editing** (this is the newest work): `selah_core::Editor` applies every
+  change to a show (`Edit`: add audio or note cues, delete, move, duplicate,
+  renumber, and `CueChange` for each cue property) with validation, and
+  undo/redo by snapshots (100 deep; quick repeated changes to one setting merge
+  into one step). `Engine::edit_show` swaps in an edited show without stopping
+  playing audio. The host applies edits (`Host::edit`, `undo`, `redo`, which
+  reply with a plain-language refusal), keeps edit mode and show mode
+  (show mode refuses all edits), and autosaves. `selah-persist::import_media`
+  copies picked files into `<show>/media/`. The shell has one command per edit
+  plus native pickers (`pick_folder`, `pick_audio_files`, via the Tauri dialog
+  plugin used from Rust). The control window has New show, Open show, Load
+  folder, Save show, Undo/Redo, the Edit/Show mode switch, a cue list with
+  selection and tools (Add audio, Add note, Duplicate, Move, Delete,
+  Renumber), and an inspector (name, number, notes, armed, wait, follow, level,
+  start, stop, fades, fade shape, repeat). Keys: Ctrl+E mode, Ctrl+Z / Ctrl+Y,
+  Ctrl+S, Delete, Alt+Up/Down (edit mode only; none fire while typing).
+  Each panel sits in an `ErrorBoundary` so a drawing fault cannot blank the
+  window.
+  Still to do in M1: dragging to reorder, multi-select, group cues and control
+  cues (fade, stop, pause, go-to, arm) in the UI, per-cue notes visible in show
+  mode, a waveform in the inspector, device settings and patch mapping,
+  reconnecting after a device is lost (detected and reported, but not
+  recovered), a preload so GO is instant (AUD-9), a recent-shows list, bundle
+  export, and relinking missing media (listed but not fixable). Not started in
+  audio: loudness measurement, a preview patch, ASIO.
   **Tried on Windows by the owner (2026-11-12):** playback, the safety keys,
-  and error messages worked as described. That predates show files; the saving
-  and opening flow has only been tested by automated tests.
+  and error messages worked, and the owner reported all checks passing for
+  show files and autosave. The editing interface has only been tested by
+  automated tests and a screenshot with faked data; it has not been run on
+  Windows.
 - **What has been verified.** On Linux: the full gate, a production build,
   the dev workflow, and a launch on a virtual display. On Windows, in CI: the
   full gate and a build of the app. On the owner's Windows machine: audio
@@ -364,7 +384,14 @@ list of everything exposed.
   against the real signatures, so a changed command breaks the tests that
   depend on it at type-check time.
 - Where a Rust type has an `Option` field, the bindings contain `X_Serialize`,
-  `X_Deserialize`, and `X`. Use plain `X` in UI code.
+  `X_Deserialize`, and `X`. Data coming **from** the core is the
+  `X_Serialize` shape (import it `as X`); the plain union `X` has optional
+  fields on its other half and does not type-check cleanly. Types sent **to**
+  the core appear in the command signature as `X_Deserialize`. Note that
+  `f64` fields are typed `number | null` (NaN becomes null); handle the null.
+- Commands that change the show return a plain-language `AppError` when the
+  core refuses (bad value, show mode, no show open); the UI shows it and the
+  show is unchanged.
 - A change to a command or event updates the Rust side, the bindings, and
   every caller in the same commit.
 - tauri-specta and specta are release candidates, pinned to exact versions in
@@ -437,6 +464,8 @@ Rust:
 TypeScript:
 
 - `strict` on, no `any`, no non-null assertions without a comment.
+- Wrap each independent panel in `ErrorBoundary` (`components/`) so one
+  drawing fault cannot blank the window.
 - Imports follow the layering below. Features do not import from other
   features; share through `components/` or `lib/`.
 - Components render state and dispatch commands. Business rules belong in Rust.
@@ -747,6 +776,16 @@ Append new entries at the bottom. One line each: date, decision, reason.
 - 2026-11-12: Opening a show is validated in the shell command so errors
   reach the operator immediately; the host thread receives an already-loaded
   show. Reason: host commands are fire-and-forget.
+- 2026-11-12: Undo restores earlier snapshots of the whole show rather than
+  computing inverses. Reason: correct for every edit, including future ones;
+  shows are small. Quick repeated changes to the same setting merge into one
+  step.
+- 2026-11-12: Edits are applied by the host thread and the caller waits for
+  its reply; show mode refuses every edit. Reason: the UI must learn at once
+  why a change was refused, and show mode must really lock the show.
+- 2026-11-12: File and folder pickers are opened from Rust through the Tauri
+  dialog plugin, not from JavaScript. Reason: no extra JavaScript permission
+  surface, and the file copying that follows stays in a crate.
 - 2026-11-12: The app identifier is `io.github.kosenuel.selahstage`, for now.
   Reason: it is verifiably ours; changing it after a release moves users'
   data, so it must be settled before the first one.

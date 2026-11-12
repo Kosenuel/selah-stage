@@ -10,11 +10,13 @@
 #![forbid(unsafe_code)]
 
 mod cue;
+mod edit;
 mod id;
 mod show;
 mod validate;
 
 pub use cue::{Cue, CueKind, Decibels, FadeCurve, Follow, GroupMode, Seconds};
+pub use edit::{CueChange, Edit, EditError, Editor, NewAudio, Outcome};
 pub use id::{CueId, ItemId, PatchId};
 pub use show::{CURRENT_SCHEMA_VERSION, Item, ItemKind, Patch, Show, ShowMeta};
 pub use validate::{Issue, IssueKind, validate};

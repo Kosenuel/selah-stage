@@ -7,7 +7,7 @@
 
 use tauri_specta::{Builder, ErrorHandlingMode, collect_commands};
 
-use crate::commands;
+use crate::{commands, editing};
 
 /// Registers every command. This is the single list to extend.
 ///
@@ -26,7 +26,19 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::reset_show,
             commands::open_show,
             commands::save_show,
-            commands::set_armed
+            editing::edit_cue,
+            editing::delete_cues,
+            editing::move_cue,
+            editing::duplicate_cue,
+            editing::add_memo,
+            editing::add_audio,
+            editing::renumber_cues,
+            editing::undo,
+            editing::redo,
+            editing::set_editing,
+            editing::new_show,
+            editing::pick_folder,
+            editing::pick_audio_files
         ])
         // A failed call can carry our `AppError` or a failure from Tauri itself
         // (an unknown command, a bad argument), and the two look alike in

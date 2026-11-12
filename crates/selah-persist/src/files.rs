@@ -63,6 +63,17 @@ fn read_show(path: &Path) -> Result<Show, PersistError> {
     serde_json::from_value(value).map_err(|_| PersistError::Corrupt(PersistError::path(path)))
 }
 
+/// Creates a new, empty show in `folder` (which may not exist yet) and
+/// returns it. Refuses to overwrite an existing show.
+pub fn create(folder: &Path, title: &str) -> Result<Show, PersistError> {
+    if is_show_folder(folder) {
+        return Err(PersistError::AlreadyAShow(PersistError::path(folder)));
+    }
+    let show = Show::new(title);
+    save(folder, &show)?;
+    Ok(show)
+}
+
 /// Writes `show` to `folder`, creating it if needed. The previous version, if
 /// different, is kept in `backups/`.
 pub fn save(folder: &Path, show: &Show) -> Result<(), PersistError> {
@@ -142,6 +153,17 @@ mod tests {
         item.cues.push(Cue::new("note", CueKind::Memo));
         show.items.push(item);
         show
+    }
+
+    #[test]
+    fn creating_a_show_makes_the_folder_and_refuses_to_overwrite() {
+        let d = dir("create").join("new-service");
+        let show = create(&d, "New service").unwrap();
+        assert_eq!(load(&d).unwrap().show, show);
+        assert!(matches!(
+            create(&d, "again"),
+            Err(PersistError::AlreadyAShow(_))
+        ));
     }
 
     #[test]

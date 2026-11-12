@@ -439,3 +439,97 @@ fn skip_and_set_playhead_move_without_firing() {
     assert!(!rig.engine.set_playhead(CueId::new()));
     assert!(rig.sink.calls().is_empty());
 }
+
+fn edit(rig: &mut Rig, cues: Vec<Cue>) {
+    let mut show = Show::new("edited");
+    let mut item = Item::new("item", ItemKind::General);
+    item.cues = cues;
+    show.items.push(item);
+    rig.engine.edit_show(&show);
+}
+
+#[test]
+fn editing_the_show_does_not_interrupt_what_is_playing() {
+    let (a, b) = (audio("a"), audio("b"));
+    let mut rig = Rig::new(vec![a.clone(), b.clone()]);
+    rig.engine.go();
+
+    let mut renamed = a.clone();
+    renamed.name = "renamed".into();
+    edit(&mut rig, vec![renamed, b.clone()]);
+
+    assert_eq!(rig.state(&a), CueState::Running);
+    assert_eq!(rig.engine.playhead_cue(), Some(b.id));
+    assert!(
+        !rig.sink
+            .calls()
+            .iter()
+            .any(|c| matches!(c, Call::Stop(..) | Call::StopAll(_)))
+    );
+}
+
+#[test]
+fn deleting_a_playing_cue_stops_it() {
+    let (a, b) = (audio("a"), audio("b"));
+    let mut rig = Rig::new(vec![a.clone(), b.clone()]);
+    rig.engine.go();
+
+    edit(&mut rig, vec![b.clone()]);
+
+    assert!(rig.sink.calls().contains(&Call::Stop(a.id, 0.05)));
+    assert_eq!(
+        rig.state(&a),
+        CueState::Idle,
+        "the engine no longer knows it"
+    );
+    assert_eq!(rig.engine.playhead_cue(), Some(b.id));
+}
+
+#[test]
+fn the_playhead_follows_its_cue_when_cues_are_reordered_or_inserted() {
+    let (a, b, c) = (audio("a"), audio("b"), audio("c"));
+    let mut rig = Rig::new(vec![a.clone(), b.clone()]);
+    rig.engine.skip();
+    assert_eq!(rig.engine.playhead_cue(), Some(b.id));
+
+    edit(&mut rig, vec![b.clone(), c.clone(), a.clone()]);
+
+    assert_eq!(rig.engine.playhead_cue(), Some(b.id));
+}
+
+#[test]
+fn deleting_the_playhead_cue_leaves_the_playhead_at_the_same_position() {
+    let (a, b, c) = (audio("a"), audio("b"), audio("c"));
+    let mut rig = Rig::new(vec![a.clone(), b.clone(), c.clone()]);
+    rig.engine.skip();
+
+    edit(&mut rig, vec![a.clone(), c.clone()]);
+
+    assert_eq!(rig.engine.playhead_cue(), Some(c.id));
+}
+
+#[test]
+fn a_cue_added_after_the_playhead_ran_off_the_end_becomes_next() {
+    let a = audio("a");
+    let mut rig = Rig::new(vec![a.clone()]);
+    rig.engine.go();
+    assert_eq!(rig.engine.playhead_cue(), None);
+
+    let b = audio("b");
+    edit(&mut rig, vec![a, b.clone()]);
+
+    assert_eq!(rig.engine.playhead_cue(), Some(b.id));
+}
+
+#[test]
+fn an_edited_arming_applies_to_the_next_go() {
+    let a = audio("a");
+    let mut rig = Rig::new(vec![a.clone()]);
+    let mut disarmed = a.clone();
+    disarmed.armed = false;
+
+    edit(&mut rig, vec![disarmed]);
+    rig.engine.go();
+
+    assert!(rig.sink.calls().is_empty());
+}

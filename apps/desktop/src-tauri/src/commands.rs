@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use selah_core::CueId;
+use selah_core::{FadeCurve, Follow};
 use selah_engine::CueState;
 use selah_host::{Command, Snapshot};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
 
@@ -77,6 +77,92 @@ pub struct CueView {
     pub status: CueStatus,
     /// A disarmed cue does nothing when it is reached, but GO still moves on.
     pub armed: bool,
+    pub notes: String,
+    /// Seconds to wait after the cue is fired before it starts.
+    pub pre_wait: f64,
+    /// Seconds after it starts before a "continue" cue starts the next one.
+    pub post_wait: f64,
+    pub follow: FollowMode,
+    /// Present for audio cues.
+    pub audio: Option<AudioView>,
+}
+
+/// What happens to the next cue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum FollowMode {
+    /// Wait for the operator's next GO.
+    None,
+    /// Start the next cue when this one starts.
+    Continue,
+    /// Start the next cue when this one finishes.
+    Follow,
+}
+
+impl From<Follow> for FollowMode {
+    fn from(f: Follow) -> Self {
+        match f {
+            Follow::None => Self::None,
+            Follow::Continue => Self::Continue,
+            Follow::Follow => Self::Follow,
+        }
+    }
+}
+
+impl From<FollowMode> for Follow {
+    fn from(f: FollowMode) -> Self {
+        match f {
+            FollowMode::None => Self::None,
+            FollowMode::Continue => Self::Continue,
+            FollowMode::Follow => Self::Follow,
+        }
+    }
+}
+
+/// The shape of a fade.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum CurveKind {
+    Linear,
+    EqualPower,
+    SCurve,
+}
+
+impl From<FadeCurve> for CurveKind {
+    fn from(c: FadeCurve) -> Self {
+        match c {
+            FadeCurve::Linear => Self::Linear,
+            FadeCurve::EqualPower => Self::EqualPower,
+            FadeCurve::SCurve => Self::SCurve,
+        }
+    }
+}
+
+impl From<CurveKind> for FadeCurve {
+    fn from(c: CurveKind) -> Self {
+        match c {
+            CurveKind::Linear => Self::Linear,
+            CurveKind::EqualPower => Self::EqualPower,
+            CurveKind::SCurve => Self::SCurve,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioView {
+    /// Path relative to the show folder.
+    pub file: String,
+    /// Decibels.
+    pub level: f64,
+    /// Where in the file playback starts and ends, in seconds.
+    pub start: f64,
+    pub end: Option<f64>,
+    /// `null` or 1 plays once, `n` plays `n` times, 0 loops forever.
+    pub loops: Option<u32>,
+    pub fade_in: f64,
+    pub fade_out: f64,
+    pub curve: CurveKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -117,6 +203,12 @@ pub struct ServiceView {
     pub save_problem: Option<String>,
     /// Something to tell the operator about how the show was opened.
     pub notice: Option<String>,
+    /// The folder the show's media lives in, once a show is open.
+    pub media_root: Option<String>,
+    /// False in show mode, when changes are locked out.
+    pub editing: bool,
+    pub can_undo: bool,
+    pub can_redo: bool,
 }
 
 impl From<Snapshot> for ServiceView {
@@ -132,6 +224,20 @@ impl From<Snapshot> for ServiceView {
                     name: c.name,
                     status: c.state.into(),
                     armed: c.armed,
+                    notes: c.notes,
+                    pre_wait: c.pre_wait,
+                    post_wait: c.post_wait,
+                    follow: c.follow.into(),
+                    audio: c.audio.map(|a| AudioView {
+                        file: a.file,
+                        level: a.level,
+                        start: a.start,
+                        end: a.end,
+                        loops: a.loops,
+                        fade_in: a.fade_in,
+                        fade_out: a.fade_out,
+                        curve: a.curve.into(),
+                    }),
                 })
                 .collect(),
             playhead: s.playhead,
@@ -155,6 +261,10 @@ impl From<Snapshot> for ServiceView {
             location: s.location,
             save_problem: s.save_problem,
             notice: s.notice,
+            media_root: s.media_root,
+            editing: s.editing,
+            can_undo: s.can_undo,
+            can_redo: s.can_redo,
         }
     }
 }
@@ -239,14 +349,4 @@ pub fn open_show(host: State<'_, HostState>, path: String) -> Result<(), AppErro
 #[specta::specta]
 pub fn save_show(host: State<'_, HostState>) -> Result<(), AppError> {
     send(&host, Command::SaveShow)
-}
-
-/// Arms or disarms a cue.
-#[tauri::command]
-#[specta::specta]
-pub fn set_armed(host: State<'_, HostState>, cue: String, armed: bool) -> Result<(), AppError> {
-    let cue: CueId = cue
-        .parse()
-        .map_err(|_| AppError::invalid_input("That cue can't be found."))?;
-    send(&host, Command::SetArmed { cue, armed })
 }

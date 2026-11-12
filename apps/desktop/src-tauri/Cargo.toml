@@ -33,6 +33,7 @@ selah-persist = { workspace = true }
 
 serde = { workspace = true }
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = "0.3"

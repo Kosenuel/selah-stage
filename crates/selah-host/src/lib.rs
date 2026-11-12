@@ -15,5 +15,6 @@ mod host;
 
 pub use folder::{FolderError, show_from_folder};
 pub use host::{
-    Command, DeviceStatus, Host, HostError, Output, Snapshot, SnapshotCue, SnapshotWarning,
+    AudioDetail, Command, DeviceStatus, EditFailure, Host, HostError, Output, Snapshot,
+    SnapshotCue, SnapshotWarning,
 };

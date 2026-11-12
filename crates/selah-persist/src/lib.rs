@@ -19,5 +19,5 @@ pub mod migrate;
 
 pub use autosave::Autosaver;
 pub use error::PersistError;
-pub use files::{BACKUPS_DIR, BACKUPS_KEPT, Loaded, SHOW_FILE, is_show_folder, load, save};
-pub use media::{MissingMedia, missing_media};
+pub use files::{BACKUPS_DIR, BACKUPS_KEPT, Loaded, SHOW_FILE, create, is_show_folder, load, save};
+pub use media::{MEDIA_DIR, MissingMedia, import_media, missing_media};

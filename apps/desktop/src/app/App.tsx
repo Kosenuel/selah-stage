@@ -1,3 +1,4 @@
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Logo } from "@/components/Logo";
 import { AboutPanel } from "@/features/about/AboutPanel";
 import { ServicePanel } from "@/features/service/ServicePanel";
@@ -13,14 +14,18 @@ export function App() {
           Pre-alpha
         </span>
       </header>
-      <main className="flex min-h-0 flex-1 justify-center overflow-auto p-6">
-        <ServicePanel />
+      <main className="flex min-h-0 flex-1 overflow-auto p-6">
+        <ErrorBoundary label="service panel">
+          <ServicePanel />
+        </ErrorBoundary>
       </main>
       <footer className="shrink-0 border-t border-border bg-surface px-4 py-2 text-sm">
         <details>
           <summary className="cursor-pointer text-text-muted">About this build</summary>
           <div className="flex justify-center py-4">
-            <AboutPanel />
+            <ErrorBoundary label="About panel">
+              <AboutPanel />
+            </ErrorBoundary>
           </div>
         </details>
       </footer>

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use selah_core::{Cue, CueId, CueKind, Follow, GroupMode, Seconds, Show};
 
@@ -137,10 +137,57 @@ impl<C: Clock, A: AudioSink> Engine<C, A> {
     /// Replaces the loaded show, stopping everything that was running.
     pub fn load(&mut self, show: &Show) {
         self.audio.stop_all(0.0);
-        self.nodes.clear();
-        self.order.clear();
         self.rt.clear();
         self.pending.clear();
+        self.rebuild(show);
+        self.playhead = if self.order.is_empty() { None } else { Some(0) };
+        self.events.push(Event::Playhead(self.playhead_cue()));
+    }
+
+    /// Swaps in an edited version of the loaded show without interrupting
+    /// anything that is playing. Cues that are gone are stopped. The playhead
+    /// stays on the same cue wherever it moved to; if that cue was deleted it
+    /// stays at the same position, and if the playhead was past the end it
+    /// moves onto the first cue added there.
+    ///
+    /// Settings of a cue that is already playing do not change until it is
+    /// fired again.
+    pub fn edit_show(&mut self, show: &Show) {
+        let before_len = self.order.len();
+        let playhead_id = self.playhead_cue();
+        let old_index = self.playhead;
+
+        let kept: HashSet<CueId> = show.all_cues().iter().map(|c| c.id).collect();
+        let gone: Vec<CueId> = self
+            .rt
+            .keys()
+            .filter(|id| !kept.contains(id))
+            .copied()
+            .collect();
+        for id in gone {
+            self.stop(id);
+            self.rt.remove(&id);
+        }
+        self.pending.retain(|(_, p)| match p {
+            Pending::Fire { from, target } => kept.contains(from) && kept.contains(target),
+            Pending::Restart(group) => kept.contains(group),
+        });
+
+        self.rebuild(show);
+
+        let new_len = self.order.len();
+        let index = match (playhead_id, old_index) {
+            (Some(id), _) if self.order.contains(&id) => self.order.iter().position(|c| *c == id),
+            (_, Some(i)) => (new_len > 0).then(|| i.min(new_len - 1)),
+            (_, None) => (new_len > before_len).then_some(before_len),
+        };
+        self.set_playhead_index(index);
+    }
+
+    /// Rebuilds the cue graph from `show`, leaving runtime state alone.
+    fn rebuild(&mut self, show: &Show) {
+        self.nodes.clear();
+        self.order.clear();
         let top: Vec<&Cue> = show
             .items
             .iter()
@@ -151,8 +198,6 @@ impl<C: Clock, A: AudioSink> Engine<C, A> {
             let next = top.get(i + 1).map(|c| c.id);
             self.index(cue, None, next);
         }
-        self.playhead = if self.order.is_empty() { None } else { Some(0) };
-        self.events.push(Event::Playhead(self.playhead_cue()));
     }
 
     fn index(&mut self, cue: &Cue, parent: Option<CueId>, next: Option<CueId>) {

@@ -5,6 +5,7 @@
 //! window belongs in a crate under `crates/`.
 
 mod commands;
+mod editing;
 mod error;
 mod host;
 pub mod ipc;
@@ -20,6 +21,7 @@ pub fn run() -> ExitCode {
 
     let ipc = ipc::builder();
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(host::HostState::start())
         .invoke_handler(ipc.invoke_handler())
         .run(tauri::generate_context!());

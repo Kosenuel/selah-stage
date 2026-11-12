@@ -1,15 +1,41 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { mockCommands, type ServiceView_Serialize } from "@/lib/bindings";
+import { mockCommands, type CueView_Serialize, type ServiceView_Serialize } from "@/lib/bindings";
 
 import { ServicePanel } from "./ServicePanel";
+
+function cue(
+  overrides: Partial<CueView_Serialize> & { id: string; name: string },
+): CueView_Serialize {
+  return {
+    number: "1",
+    status: "idle",
+    armed: true,
+    notes: "",
+    preWait: 0,
+    postWait: 0,
+    follow: "none",
+    audio: {
+      file: `media/${overrides.name}.wav`,
+      level: 0,
+      start: 0,
+      end: null,
+      loops: null,
+      fadeIn: 0,
+      fadeOut: 0,
+      curve: "equalPower",
+    },
+    ...overrides,
+  };
+}
 
 const view: ServiceView_Serialize = {
   title: "Sunday",
   cues: [
-    { id: "a", number: "1", name: "Walk-in", status: "running", armed: true },
-    { id: "b", number: "2", name: "Welcome", status: "idle", armed: true },
+    cue({ id: "a", number: "1", name: "Walk-in", status: "running" }),
+    cue({ id: "b", number: "2", name: "Welcome" }),
+    cue({ id: "c", number: "3", name: "Hymn" }),
   ],
   playhead: "b",
   warnings: [{ cue: "Welcome", message: "Can't find welcome.wav. Relink it or skip." }],
@@ -19,9 +45,19 @@ const view: ServiceView_Serialize = {
   location: "C:\\Shows\\Sunday",
   saveProblem: null,
   notice: null,
+  mediaRoot: "C:\\Shows\\Sunday",
+  editing: true,
+  canUndo: true,
+  canRedo: false,
 };
 
-describe("ServicePanel", () => {
+const ok = () => null;
+
+async function select(name: string) {
+  fireEvent.click(await screen.findByText(name));
+}
+
+describe("operating the service", () => {
   it("shows the cues, what is next, and warnings", async () => {
     mockCommands({ serviceState: () => view });
 
@@ -34,36 +70,28 @@ describe("ServicePanel", () => {
     expect(screen.getByText(/Speakers/)).toBeInTheDocument();
   });
 
-  it("says plainly when there is nothing loaded", async () => {
-    mockCommands({ serviceState: () => ({ ...view, title: "", cues: [], playhead: null }) });
-
-    render(<ServicePanel />);
-
-    expect(await screen.findByText(/No cues yet/)).toBeInTheDocument();
-  });
-
   it("fires GO from the button and from the space bar, but not while typing", async () => {
-    const go = vi.fn(() => null);
+    const go = vi.fn(ok);
     mockCommands({ serviceState: () => view, go });
     render(<ServicePanel />);
     await screen.findByText("Walk-in");
+    await select("Welcome");
 
     fireEvent.click(screen.getByRole("button", { name: /GO/ }));
     await waitFor(() => {
       expect(go).toHaveBeenCalledTimes(1);
     });
-
     fireEvent.keyDown(window, { code: "Space" });
     await waitFor(() => {
       expect(go).toHaveBeenCalledTimes(2);
     });
 
-    fireEvent.keyDown(screen.getByRole("textbox"), { code: "Space", bubbles: true });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { code: "Space" });
     expect(go).toHaveBeenCalledTimes(2);
   });
 
   it("panics on Escape", async () => {
-    const panicStop = vi.fn(() => null);
+    const panicStop = vi.fn(ok);
     mockCommands({ serviceState: () => view, panicStop });
     render(<ServicePanel />);
     await screen.findByText("Walk-in");
@@ -75,25 +103,51 @@ describe("ServicePanel", () => {
     });
   });
 
-  it("loads the folder that was typed", async () => {
-    const loadFolder = vi.fn(() => null);
-    mockCommands({ serviceState: () => view, loadFolder });
-    render(<ServicePanel />);
-
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "C:\\Music\\Sunday" } });
-    fireEvent.click(screen.getByRole("button", { name: "Load folder" }));
-
-    await waitFor(() => {
-      expect(loadFolder).toHaveBeenCalledWith({ path: "C:\\Music\\Sunday" });
+  it("says plainly when there is no show yet", async () => {
+    mockCommands({
+      serviceState: () => ({
+        ...view,
+        title: "",
+        cues: [],
+        playhead: null,
+        mediaRoot: null,
+        location: null,
+      }),
     });
+    render(<ServicePanel />);
+    expect(await screen.findByText(/No show yet/)).toBeInTheDocument();
   });
 
-  it("opens a saved show from the typed path", async () => {
-    const openShow = vi.fn(() => null);
-    mockCommands({ serviceState: () => view, openShow });
+  it("shows the core's message when something fails, and keeps it on screen", async () => {
+    mockCommands({
+      serviceState: () => view,
+      saveShow: () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error -- mirrors what the core sends
+        throw { kind: "invalidInput", message: "Can't save to C:\\Shows. Check the disk." };
+      },
+    });
     render(<ServicePanel />);
+    await screen.findByText("Walk-in");
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "C:\\Shows\\Sunday" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save show" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Can't save to");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.getByRole("alert")).toHaveTextContent("Can't save to");
+  });
+});
+
+describe("files and folders", () => {
+  it("opens a show from the folder the operator picks", async () => {
+    const openShow = vi.fn(ok);
+    mockCommands({
+      serviceState: () => view,
+      pickFolder: () => "C:\\Shows\\Sunday",
+      openShow,
+    });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
     fireEvent.click(screen.getByRole("button", { name: "Open show" }));
 
     await waitFor(() => {
@@ -101,8 +155,28 @@ describe("ServicePanel", () => {
     });
   });
 
-  it("says where the show is saved and lets the operator save", async () => {
-    const saveShow = vi.fn(() => null);
+  it("creates a new show in the folder picked, and does nothing if they cancel", async () => {
+    const newShow = vi.fn(ok);
+    const pickFolder = vi.fn<() => string | null>(() => "C:\\Shows\\New");
+    mockCommands({ serviceState: () => view, pickFolder, newShow });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
+    fireEvent.click(screen.getByRole("button", { name: "New show" }));
+    await waitFor(() => {
+      expect(newShow).toHaveBeenCalledWith({ path: "C:\\Shows\\New" });
+    });
+
+    pickFolder.mockReturnValue(null);
+    fireEvent.click(screen.getByRole("button", { name: "New show" }));
+    await waitFor(() => {
+      expect(pickFolder).toHaveBeenCalledTimes(2);
+    });
+    expect(newShow).toHaveBeenCalledTimes(1);
+  });
+
+  it("says where the show is saved, and lets the operator save", async () => {
+    const saveShow = vi.fn(ok);
     mockCommands({ serviceState: () => view, saveShow });
     render(<ServicePanel />);
 
@@ -129,33 +203,300 @@ describe("ServicePanel", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Can't save to");
     expect(screen.getByRole("status")).toHaveTextContent("latest backup was opened");
   });
+});
 
-  it("arms and disarms a cue from its checkbox", async () => {
-    const setArmed = vi.fn(() => null);
-    mockCommands({ serviceState: () => view, setArmed });
+describe("editing cues", () => {
+  it("shows the settings of the selected cue", async () => {
+    mockCommands({ serviceState: () => view });
     render(<ServicePanel />);
-    await screen.findByText("Walk-in");
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Armed: Walk-in" }));
+    await select("Welcome");
+
+    const inspector = screen.getByRole("complementary", { name: "Settings for Welcome" });
+    expect(within(inspector).getByRole("textbox", { name: "Name" })).toHaveValue("Welcome");
+    expect(within(inspector).getByText("media/Welcome.wav")).toBeInTheDocument();
+  });
+
+  it("renames a cue when the operator leaves the box", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => view, editCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    const name = screen.getByRole("textbox", { name: "Name" });
+    fireEvent.change(name, { target: { value: "Greeting" } });
+    fireEvent.blur(name);
 
     await waitFor(() => {
-      expect(setArmed).toHaveBeenCalledWith({ cue: "a", armed: false });
+      expect(editCue).toHaveBeenCalledWith({
+        cue: "b",
+        change: { type: "name", value: "Greeting" },
+      });
     });
   });
 
-  it("shows the core's message when something fails", async () => {
+  it("sends numbers, and an empty optional box means none", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => view, editCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    const fadeIn = screen.getByRole("textbox", { name: "Fade in (seconds)" });
+    fireEvent.change(fadeIn, { target: { value: "2.5" } });
+    fireEvent.blur(fadeIn);
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "b", change: { type: "fadeIn", value: 2.5 } });
+    });
+
+    const stop = screen.getByRole("textbox", { name: "Stop at (seconds)" });
+    fireEvent.change(stop, { target: { value: "30" } });
+    fireEvent.blur(stop);
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "b", change: { type: "end", value: 30 } });
+    });
+  });
+
+  it("does not send text that is not a number", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => view, editCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    const fadeIn = screen.getByRole("textbox", { name: "Fade in (seconds)" });
+    fireEvent.change(fadeIn, { target: { value: "soon" } });
+    fireEvent.blur(fadeIn);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(editCue).not.toHaveBeenCalled();
+  });
+
+  it("changes the follow mode and shows the next-cue wait only when it matters", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => view, editCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    expect(screen.queryByRole("textbox", { name: /Wait before the next cue/ })).toBeNull();
+    fireEvent.change(screen.getByRole("combobox", { name: "After this cue starts" }), {
+      target: { value: "continue" },
+    });
+
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({
+        cue: "b",
+        change: { type: "follow", value: "continue" },
+      });
+    });
+  });
+
+  it("sends level changes from the slider", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => view, editCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    fireEvent.change(screen.getByRole("slider", { name: "Level" }), { target: { value: "-6" } });
+
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "b", change: { type: "level", value: -6 } });
+    });
+  });
+
+  it("arms and disarms from the inspector", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => view, editCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Armed/ }));
+
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "b", change: { type: "armed", value: false } });
+    });
+  });
+
+  it("adds audio after the selected cue and selects what was added", async () => {
+    const addAudio = vi.fn(() => ["new"]);
+    mockCommands({
+      serviceState: () => ({
+        ...view,
+        cues: [...view.cues, cue({ id: "new", number: "4", name: "Added" })],
+      }),
+      pickAudioFiles: () => ["C:\\Music\\a.wav"],
+      addAudio,
+    });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add audio" }));
+
+    await waitFor(() => {
+      expect(addAudio).toHaveBeenCalledWith({ paths: ["C:\\Music\\a.wav"], before: "c" });
+    });
+    expect(
+      await screen.findByRole("complementary", { name: "Settings for Added" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does nothing when the file picker is cancelled", async () => {
+    const addAudio = vi.fn(() => []);
+    mockCommands({ serviceState: () => view, pickAudioFiles: () => [], addAudio });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add audio" }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(addAudio).not.toHaveBeenCalled();
+  });
+
+  it("deletes, moves, and duplicates the selected cue", async () => {
+    const deleteCues = vi.fn(ok);
+    const moveCue = vi.fn(ok);
+    // No new id, so the selection stays on "b" in this fixed fake view.
+    const duplicateCue = vi.fn((): string[] => []);
+    mockCommands({ serviceState: () => view, deleteCues, moveCue, duplicateCue });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    fireEvent.click(screen.getByRole("button", { name: "Move up" }));
+    await waitFor(() => {
+      expect(moveCue).toHaveBeenCalledWith({ cue: "b", before: "a" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Move down" }));
+    await waitFor(() => {
+      expect(moveCue).toHaveBeenCalledWith({ cue: "b", before: null });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+    await waitFor(() => {
+      expect(duplicateCue).toHaveBeenCalledWith({ cue: "b" });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => {
+      expect(deleteCues).toHaveBeenCalledWith({ cues: ["b"] });
+    });
+  });
+
+  it("uses the keyboard to delete, move, undo and redo", async () => {
+    const deleteCues = vi.fn(ok);
+    const moveCue = vi.fn(ok);
+    const undo = vi.fn(ok);
+    const redo = vi.fn(ok);
+    mockCommands({
+      serviceState: () => ({ ...view, canRedo: true }),
+      deleteCues,
+      moveCue,
+      undo,
+      redo,
+    });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    fireEvent.keyDown(window, { code: "Delete" });
+    await waitFor(() => {
+      expect(deleteCues).toHaveBeenCalledWith({ cues: ["b"] });
+    });
+    fireEvent.keyDown(window, { code: "ArrowUp", altKey: true });
+    await waitFor(() => {
+      expect(moveCue).toHaveBeenCalledWith({ cue: "b", before: "a" });
+    });
+    fireEvent.keyDown(window, { code: "KeyZ", ctrlKey: true });
+    await waitFor(() => {
+      expect(undo).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.keyDown(window, { code: "KeyY", ctrlKey: true });
+    await waitFor(() => {
+      expect(redo).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not delete a cue while the operator is typing in a field", async () => {
+    const deleteCues = vi.fn(ok);
+    mockCommands({ serviceState: () => view, deleteCues });
+    render(<ServicePanel />);
+    await select("Welcome");
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Name" }), { code: "Delete" });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(deleteCues).not.toHaveBeenCalled();
+  });
+
+  it("disables undo and redo when there is nothing to undo or redo", async () => {
+    mockCommands({ serviceState: () => ({ ...view, canUndo: false, canRedo: false }) });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  });
+
+  it("shows the core's reason when an edit is refused", async () => {
     mockCommands({
       serviceState: () => view,
-      loadFolder: () => {
+      editCue: () => {
         // eslint-disable-next-line @typescript-eslint/only-throw-error -- mirrors what the core sends
-        throw { kind: "invalidInput", message: "There are no audio files in that folder." };
+        throw { kind: "invalidInput", message: "Times must be between 0 and 10 hours." };
       },
     });
     render(<ServicePanel />);
+    await select("Welcome");
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "x" } });
-    fireEvent.click(screen.getByRole("button", { name: "Load folder" }));
+    const wait = screen.getByRole("textbox", { name: "Wait before starting (seconds)" });
+    fireEvent.change(wait, { target: { value: "-5" } });
+    fireEvent.blur(wait);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("There are no audio files");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Times must be between");
+  });
+});
+
+describe("show mode", () => {
+  it("switches mode from the button and from Ctrl+E", async () => {
+    const setEditing = vi.fn(ok);
+    mockCommands({ serviceState: () => view, setEditing });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
+    fireEvent.click(screen.getByRole("button", { name: /Edit mode/ }));
+    await waitFor(() => {
+      expect(setEditing).toHaveBeenCalledWith({ editing: false });
+    });
+
+    fireEvent.keyDown(window, { code: "KeyE", ctrlKey: true });
+    await waitFor(() => {
+      expect(setEditing).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("hides every editing control in show mode and keeps GO and Panic", async () => {
+    mockCommands({ serviceState: () => ({ ...view, editing: false }) });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
+    expect(screen.getByRole("button", { name: /Show mode/ })).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "Edit cues" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeDisabled();
+    fireEvent.click(screen.getByText("Welcome"));
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(screen.getByRole("button", { name: /GO/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Panic/ })).toBeEnabled();
+  });
+
+  it("ignores editing shortcuts in show mode", async () => {
+    const deleteCues = vi.fn(ok);
+    const undo = vi.fn(ok);
+    mockCommands({ serviceState: () => ({ ...view, editing: false }), deleteCues, undo });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+
+    fireEvent.keyDown(window, { code: "Delete" });
+    fireEvent.keyDown(window, { code: "KeyZ", ctrlKey: true });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(deleteCues).not.toHaveBeenCalled();
+    expect(undo).not.toHaveBeenCalled();
   });
 });

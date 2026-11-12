@@ -5,6 +5,8 @@ use std::path::Path;
 pub enum PersistError {
     #[error("There is no show in {0}. Choose a folder that has a show.json file.")]
     NotAShow(String),
+    #[error("There is already a show in {0}. Open it instead, or choose an empty folder.")]
+    AlreadyAShow(String),
     #[error("Can't read {0}. Check that the folder is still there and not in use.")]
     Unreadable(String),
     #[error("The show file in {0} is damaged, and no backup could be used.")]
