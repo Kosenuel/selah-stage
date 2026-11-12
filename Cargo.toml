@@ -16,6 +16,7 @@ selah-audio = { path = "crates/selah-audio" }
 selah-control = { path = "crates/selah-control" }
 selah-core = { path = "crates/selah-core" }
 selah-engine = { path = "crates/selah-engine" }
+selah-host = { path = "crates/selah-host" }
 selah-library = { path = "crates/selah-library" }
 selah-media = { path = "crates/selah-media" }
 selah-persist = { path = "crates/selah-persist" }

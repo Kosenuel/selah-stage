@@ -16,7 +16,15 @@ use crate::commands;
 /// `setup` hook in `lib.rs`.
 pub fn builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
-        .commands(collect_commands![commands::app_info])
+        .commands(collect_commands![
+            commands::app_info,
+            commands::service_state,
+            commands::load_folder,
+            commands::go,
+            commands::skip,
+            commands::panic_stop,
+            commands::reset_show
+        ])
         // A failed call can carry our `AppError` or a failure from Tauri itself
         // (an unknown command, a bad argument), and the two look alike in
         // JavaScript. So nothing is thrown and the error is typed `unknown`;

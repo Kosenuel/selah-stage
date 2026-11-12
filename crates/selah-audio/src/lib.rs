@@ -27,5 +27,5 @@ mod engine;
 mod routing;
 
 pub use backend::{DeviceError, OfflineBackend, OutputDevice, RunningDevice};
-pub use engine::{AudioEngine, AudioEvent};
+pub use engine::{AudioClock, AudioEngine, AudioEvent};
 pub use mixer::{MAX_DEVICE_CHANNELS, MAX_VOICES, Meters, Mixer};

@@ -1,5 +1,6 @@
 import { Logo } from "@/components/Logo";
 import { AboutPanel } from "@/features/about/AboutPanel";
+import { ServicePanel } from "@/features/service/ServicePanel";
 
 /** The control window: the operator's view of the whole service. */
 export function App() {
@@ -12,9 +13,17 @@ export function App() {
           Pre-alpha
         </span>
       </header>
-      <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-8">
-        <AboutPanel />
+      <main className="flex min-h-0 flex-1 justify-center overflow-auto p-6">
+        <ServicePanel />
       </main>
+      <footer className="shrink-0 border-t border-border bg-surface px-4 py-2 text-sm">
+        <details>
+          <summary className="cursor-pointer text-text-muted">About this build</summary>
+          <div className="flex justify-center py-4">
+            <AboutPanel />
+          </div>
+        </details>
+      </footer>
     </div>
   );
 }

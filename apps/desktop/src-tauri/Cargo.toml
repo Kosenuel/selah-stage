@@ -26,6 +26,7 @@ selah-audio = { workspace = true }
 selah-control = { workspace = true }
 selah-core = { workspace = true }
 selah-engine = { workspace = true }
+selah-host = { workspace = true }
 selah-library = { workspace = true }
 selah-media = { workspace = true }
 selah-persist = { workspace = true }

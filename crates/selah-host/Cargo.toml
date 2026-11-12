@@ -1,0 +1,22 @@
+[package]
+name = "selah-host"
+description = "The host loop that runs the cue engine and audio engine together."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+selah-audio = { workspace = true }
+selah-core = { workspace = true }
+selah-engine = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+hound = { workspace = true }

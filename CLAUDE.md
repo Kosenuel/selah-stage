@@ -39,15 +39,22 @@ Two documents define the project:
   `selah_engine::AudioSink`, an `OfflineBackend` for tests, and a cpal
   `OutputDevice` (WASAPI on Windows). The cue engine plus audio engine are
   tested end to end with real WAV files and no device.
+  `selah-host` runs both on one thread with the audio device, using the
+  audio frame count as the master clock, and publishes a `Snapshot`. The shell
+  exposes it as commands (`service_state`, `load_folder`, `go`, `skip`,
+  `panic_stop`, `reset_show`), and the control window has a working operator
+  panel: load a folder of audio files as cues, GO (Space), Skip, Reset, Panic
+  (Esc), cue states, next marker, warnings, output meter. If no sound device
+  can be opened the app still starts and says why. The UI polls every 100 ms;
+  events and channels are not used yet.
   Still to do in M1: the undoable edit stack and live editing in the cue
-  engine, show files and autosave (`selah-persist`), the shell wiring (a host
-  loop that ticks the engine, polls `AudioEngine`, forwards `Finished` events,
-  and owns the device), IPC commands and events, the control UI, and
-  reconnecting after a device is lost (`RunningDevice::is_lost` and
-  `AudioEngine::reattach` exist; the loop that uses them does not).
-  Not yet done in audio: a preload API so GO is instant for cues near the
-  playhead (AUD-9), loudness measurement, a preview patch, ASIO, and any test
-  on a real device. Real playback has never been heard on any machine.
+  engine, show files and autosave (`selah-persist`), building shows in the UI
+  (cue list editing and inspector, show mode), device settings and patch
+  mapping, reconnecting after a device is lost (detected and reported, but not
+  recovered), and a preload so GO is instant (AUD-9). Not started in audio:
+  loudness measurement, a preview patch, ASIO.
+  **Real playback has never been heard on any machine.** Try it on Windows:
+  `pnpm tauri dev`, type a folder of WAV or MP3 files, Load, press Space.
 - **What has been verified.** On Linux: the full gate, a production build,
   the dev workflow, and a launch on a virtual display. On Windows, in CI only:
   the full gate and a build of the app. Nobody has yet launched the app on a
@@ -149,7 +156,7 @@ apps/desktop/                 The app (pnpm package `@selah/desktop`)
   index.html, output.html     One entry page per kind of window
   src/
     app/                      Control window: shell and composition
-    features/                 One folder per feature (only about/ so far)
+    features/                 One folder per feature (about/, service/ so far)
     outputs/                  Output window renderers
     components/               Shared presentational pieces, no feature logic
     lib/                      bindings.ts (generated), ipc.ts, mount.tsx
@@ -170,6 +177,8 @@ crates/
   selah-library/              Song and scripture library, importers.
   selah-persist/              Show file load, save, migrate, autosave, bundle.
   selah-control/              MIDI, OSC, remote control.
+  selah-host/                 The host loop: owns the device, cue engine, and
+                              audio engine on one thread; publishes snapshots.
 docs/PRD.md                   Product requirements
 fixtures/                     Small test media and sample shows (public domain only)
 scripts/check-crate-deps.mjs  Enforces the crate dependency rules
@@ -705,6 +714,15 @@ Append new entries at the bottom. One line each: date, decision, reason.
   for its library. Reason: its unit-test program could not start on Windows
   (seen in CI); the alternative, removing a Tauri feature, would have changed
   the app's own error dialog.
+- 2026-11-12: A `selah-host` crate owns the device, cue engine, and audio
+  engine on one thread. Reason: the device's stream must stay on one thread,
+  and the loop is logic that belongs outside the shell.
+- 2026-11-12: The cue engine's clock is the count of frames the audio device
+  has played. Reason: waits and fades must stay tied to the sound (see
+  Architecture rules).
+- 2026-11-12: The UI polls `service_state` every 100 ms for now. Reason:
+  simplest correct start; switch to events and channels when load or latency
+  makes it worth it.
 - 2026-11-12: The app identifier is `io.github.kosenuel.selahstage`, for now.
   Reason: it is verifiably ours; changing it after a release moves users'
   data, so it must be settled before the first one.

@@ -6,7 +6,7 @@
 //! *dropped* on a control thread, never here.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use rtrb::{Consumer, Producer};
 use selah_core::{CueId, FadeCurve};
@@ -204,6 +204,7 @@ impl Voice {
 pub struct Meters {
     peaks: [AtomicU32; MAX_DEVICE_CHANNELS],
     underruns: AtomicU32,
+    frames: AtomicU64,
 }
 
 impl Meters {
@@ -211,7 +212,13 @@ impl Meters {
         Self {
             peaks: std::array::from_fn(|_| AtomicU32::new(0)),
             underruns: AtomicU32::new(0),
+            frames: AtomicU64::new(0),
         }
+    }
+
+    /// Frames the device has played so far. This is the master clock.
+    pub fn frames_rendered(&self) -> u64 {
+        self.frames.load(Ordering::Relaxed)
     }
 
     /// Peaks since the last call, then resets them.
@@ -275,6 +282,9 @@ impl Mixer {
         }
         self.drain_commands();
         let frames = out.len() / device_channels;
+        self.meters
+            .frames
+            .fetch_add(frames as u64, Ordering::Relaxed);
         for index in 0..self.slots.len() {
             let end = match self.slots[index].as_mut() {
                 Some(voice) => {

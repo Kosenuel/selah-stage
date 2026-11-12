@@ -6,6 +6,7 @@
 
 mod commands;
 mod error;
+mod host;
 pub mod ipc;
 
 use std::process::ExitCode;
@@ -19,6 +20,7 @@ pub fn run() -> ExitCode {
 
     let ipc = ipc::builder();
     let result = tauri::Builder::default()
+        .manage(host::HostState::start())
         .invoke_handler(ipc.invoke_handler())
         .run(tauri::generate_context!());
 

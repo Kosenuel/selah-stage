@@ -7,6 +7,18 @@ import { mockIPC as __TAURI_MOCK_IPC } from "@tauri-apps/api/mocks";
 /** Commands */
 export const commands = {
 	appInfo: () => typedError<AppInfo_Serialize, AppError>(__TAURI_INVOKE("app_info")),
+	/**  The current state of the service, for the UI to draw. Cheap; poll it. */
+	serviceState: () => typedError<ServiceView_Serialize, AppError>(__TAURI_INVOKE("service_state")),
+	/**
+	 *  Loads every audio file in a folder as a list of cues. A quick way to try
+	 *  the engine until shows can be built and saved.
+	 */
+	loadFolder: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("load_folder", { path })),
+	go: () => typedError<null, AppError>(__TAURI_INVOKE("go")),
+	skip: () => typedError<null, AppError>(__TAURI_INVOKE("skip")),
+	/**  Fades everything out; pressed again, stops at once. */
+	panicStop: () => typedError<null, AppError>(__TAURI_INVOKE("panic_stop")),
+	resetShow: () => typedError<null, AppError>(__TAURI_INVOKE("reset_show")),
 };
 
 /* Types */
@@ -32,7 +44,12 @@ export type AppError = {
  */
 export type AppErrorKind = 
 /**  Something went wrong inside the app that the operator cannot fix. */
-"internal";
+"internal" | 
+/**
+ *  The operator gave something that cannot be used, such as a folder path
+ *  that does not exist. The message says how to fix it.
+ */
+"invalidInput";
 
 /**
  *  Facts about the running app, shown on the About screen and attached to
@@ -74,6 +91,72 @@ export type AppInfo_Serialize = {
 	debugBuild: boolean,
 };
 
+/**  Where a cue is in its life, as the UI names it. */
+export type CueStatus = "idle" | "waiting" | "running" | "paused" | "done" | "stopped";
+
+export type CueView = {
+	id: string,
+	number: string,
+	name: string,
+	status: CueStatus,
+};
+
+export type DeviceView = DeviceView_Serialize | DeviceView_Deserialize;
+
+export type DeviceView_Deserialize = {
+	name: string,
+	sampleRate: number,
+	channels: number,
+	/**  True when sound really goes to a device. */
+	audible: boolean,
+	/**  Plain words about why there is no sound, if there is a problem. */
+	problem?: string | null,
+};
+
+export type DeviceView_Serialize = {
+	name: string,
+	sampleRate: number,
+	channels: number,
+	/**  True when sound really goes to a device. */
+	audible: boolean,
+	/**  Plain words about why there is no sound, if there is a problem. */
+	problem: string | null,
+};
+
+/**  Everything the control window shows about the running service. */
+export type ServiceView = ServiceView_Serialize | ServiceView_Deserialize;
+
+/**  Everything the control window shows about the running service. */
+export type ServiceView_Deserialize = {
+	title: string,
+	cues: CueView[],
+	/**  The cue that fires on the next GO. */
+	playhead?: string | null,
+	warnings: WarningView[],
+	/**  Peak level per output channel, 0 to 1, since the last read. */
+	peaks: (number | null)[],
+	underruns: number,
+	device: DeviceView_Deserialize,
+};
+
+/**  Everything the control window shows about the running service. */
+export type ServiceView_Serialize = {
+	title: string,
+	cues: CueView[],
+	/**  The cue that fires on the next GO. */
+	playhead: string | null,
+	warnings: WarningView[],
+	/**  Peak level per output channel, 0 to 1, since the last read. */
+	peaks: (number | null)[],
+	underruns: number,
+	device: DeviceView_Serialize,
+};
+
+export type WarningView = {
+	cue: string,
+	message: string,
+};
+
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: unknown }> {
     try {
@@ -88,6 +171,12 @@ async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; dat
 /** A handler for each generated command, keyed by its `commands` accessor. */
 export type MockCommandHandlers = {
     appInfo: () => AppInfo_Serialize | Promise<AppInfo_Serialize>,
+    serviceState: () => ServiceView_Serialize | Promise<ServiceView_Serialize>,
+    loadFolder: (args: { path: string }) => null | Promise<null>,
+    go: () => null | Promise<null>,
+    skip: () => null | Promise<null>,
+    panicStop: () => null | Promise<null>,
+    resetShow: () => null | Promise<null>,
 };
 
 /**
@@ -115,6 +204,12 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
     return __TAURI_MOCK_IPC((cmd, args) => {
         switch (cmd) {
             case "app_info": return mockCommandHandler(mockHandlers.appInfo, "app_info", args);
+            case "service_state": return mockCommandHandler(mockHandlers.serviceState, "service_state", args);
+            case "load_folder": return mockCommandHandler(mockHandlers.loadFolder, "load_folder", args);
+            case "go": return mockCommandHandler(mockHandlers.go, "go", args);
+            case "skip": return mockCommandHandler(mockHandlers.skip, "skip", args);
+            case "panic_stop": return mockCommandHandler(mockHandlers.panicStop, "panic_stop", args);
+            case "reset_show": return mockCommandHandler(mockHandlers.resetShow, "reset_show", args);
             default: throw new Error(`No mock handler registered for command '${cmd}'`);
         }
     }, { shouldMockEvents: true });

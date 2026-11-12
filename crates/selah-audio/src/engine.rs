@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicBool;
 
 use rtrb::{Consumer, Producer, RingBuffer};
 use selah_core::{CueId, Decibels, FadeCurve, PatchId, Seconds};
-use selah_engine::{AudioPlay, AudioSink, SinkError};
+use selah_engine::{AudioPlay, AudioSink, Clock, SinkError};
 
 use crate::decode::{DecodeError, Decoder, StreamPlan, run_stream};
 use crate::fader::db_to_linear;
@@ -31,6 +31,20 @@ pub enum AudioEvent {
 const BUFFER_SECONDS: usize = 2;
 /// How much must be buffered before a voice starts sounding.
 const PREBUFFER_SECONDS: f64 = 0.1;
+
+/// Time counted in played audio frames. Hand it to the cue engine so that
+/// waits and fades are tied to the sound, never to the system clock.
+#[derive(Clone)]
+pub struct AudioClock {
+    meters: Arc<Meters>,
+    sample_rate: u32,
+}
+
+impl Clock for AudioClock {
+    fn now(&self) -> Seconds {
+        self.meters.frames_rendered() as f64 / f64::from(self.sample_rate)
+    }
+}
 
 pub struct AudioEngine {
     sample_rate: u32,
@@ -110,6 +124,14 @@ impl AudioEngine {
 
     pub fn device_channels(&self) -> usize {
         self.device_channels
+    }
+
+    /// The master clock: time as counted by the frames the device has played.
+    pub fn clock(&self) -> AudioClock {
+        AudioClock {
+            meters: self.meters.clone(),
+            sample_rate: self.sample_rate,
+        }
     }
 
     pub fn meters(&self) -> Arc<Meters> {

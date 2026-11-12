@@ -25,9 +25,19 @@ pub struct AppError {
 pub enum AppErrorKind {
     /// Something went wrong inside the app that the operator cannot fix.
     Internal,
+    /// The operator gave something that cannot be used, such as a folder path
+    /// that does not exist. The message says how to fix it.
+    InvalidInput,
 }
 
 impl AppError {
+    pub fn invalid_input(message: impl Into<String>) -> Self {
+        Self {
+            kind: AppErrorKind::InvalidInput,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self {
             kind: AppErrorKind::Internal,

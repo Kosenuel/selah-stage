@@ -2998,6 +2998,7 @@ dependencies = [
  "selah-control",
  "selah-core",
  "selah-engine",
+ "selah-host",
  "selah-library",
  "selah-media",
  "selah-persist",
@@ -3018,6 +3019,18 @@ name = "selah-engine"
 version = "0.1.0"
 dependencies = [
  "selah-core",
+]
+
+[[package]]
+name = "selah-host"
+version = "0.1.0"
+dependencies = [
+ "hound",
+ "selah-audio",
+ "selah-core",
+ "selah-engine",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
