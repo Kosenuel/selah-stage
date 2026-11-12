@@ -30,9 +30,8 @@ Two documents define the project:
   documented stubs with no code. The next milestone is M1.
 - **What has been verified.** On Linux: the full gate, a production build,
   the dev workflow, and a launch on a virtual display. On Windows, in CI only:
-  formatting, lints, and every crate's tests except the shell's. The shell's
-  tests and the app build are not yet confirmed on Windows. Nobody has yet
-  launched the app on a real Windows machine.
+  the full gate and a build of the app. Nobody has yet launched the app on a
+  real Windows machine, so its appearance and behaviour there are untested.
 - **There is no `main` branch yet.** M0 was pushed to a session branch, which
   is the repository's only branch. CI's push trigger and the branch rules
   below assume `main`; until the owner creates it, branch from the latest
