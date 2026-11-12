@@ -16,6 +16,9 @@ function cue(
     preWait: 0,
     postWait: 0,
     follow: "none",
+    control: null,
+    group: null,
+    children: [],
     audio: {
       file: `media/${overrides.name}.wav`,
       level: 0,
@@ -498,5 +501,312 @@ describe("show mode", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(deleteCues).not.toHaveBeenCalled();
     expect(undo).not.toHaveBeenCalled();
+  });
+});
+
+function plain(id: string, name: string, number: string): CueView_Serialize {
+  return cue({ id, name, number });
+}
+
+function groupCue(
+  id: string,
+  children: CueView_Serialize[],
+  mode: "together" | "sequence" = "together",
+): CueView_Serialize {
+  return {
+    ...cue({ id, name: "Worship set", number: "2" }),
+    audio: null,
+    group: { mode, looped: false },
+    children,
+  };
+}
+
+function controlCue(
+  id: string,
+  kind: "fade" | "stop" | "pause" | "goTo" | "arm",
+  target: string,
+  targetName: string | null,
+): CueView_Serialize {
+  return {
+    ...cue({ id, name: `Control ${id}`, number: "9" }),
+    audio: null,
+    control: {
+      kind,
+      target,
+      targetName,
+      to: -60,
+      duration: 3,
+      curve: "equalPower",
+      stopWhenDone: true,
+      arms: true,
+    },
+  };
+}
+
+const nested: ServiceView_Serialize = {
+  ...view,
+  cues: [
+    plain("a", "Walk-in", "1"),
+    groupCue("g", [plain("x", "Song one", "2.1"), plain("y", "Song two", "2.2")]),
+    plain("b", "Welcome", "3"),
+  ],
+  playhead: "a",
+  warnings: [],
+};
+
+describe("groups", () => {
+  it("shows the cues inside a group, indented, with how the group starts them", async () => {
+    mockCommands({ serviceState: () => nested });
+    render(<ServicePanel />);
+
+    expect(await screen.findByText("Song one")).toBeInTheDocument();
+    expect(screen.getByText(/Group: all at once/)).toBeInTheDocument();
+    const child = screen.getByText("Song one").closest("li");
+    expect(child).toHaveStyle({ marginLeft: "28px" });
+    expect(screen.getByText("Welcome").closest("li")).toHaveStyle({ marginLeft: "0px" });
+  });
+
+  it("selects several cues with Ctrl and Shift, and groups them", async () => {
+    const groupCues = vi.fn(() => ["g2"]);
+    mockCommands({ serviceState: () => nested, groupCues });
+    render(<ServicePanel />);
+
+    await select("Walk-in");
+    fireEvent.click(screen.getByText("Welcome"), { ctrlKey: true });
+    expect(screen.getByRole("complementary", { name: "Selection" })).toHaveTextContent(
+      "2 cues selected",
+    );
+    expect(screen.queryByRole("complementary", { name: /Settings for/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Group" }));
+
+    await waitFor(() => {
+      expect(groupCues).toHaveBeenCalledWith({ cues: ["a", "b"] });
+    });
+  });
+
+  it("selects a range with Shift", async () => {
+    const deleteCues = vi.fn(ok);
+    mockCommands({ serviceState: () => nested, deleteCues });
+    render(<ServicePanel />);
+
+    await select("Walk-in");
+    fireEvent.click(screen.getByText("Song one"), { shiftKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(deleteCues).toHaveBeenCalledWith({ cues: ["a", "g", "x"] });
+    });
+  });
+
+  it("cannot group a cue that is already inside a group, but can ungroup a group", async () => {
+    const ungroup = vi.fn(ok);
+    mockCommands({ serviceState: () => nested, ungroup });
+    render(<ServicePanel />);
+
+    await select("Song one");
+    expect(screen.getByRole("button", { name: "Group" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ungroup" })).toBeDisabled();
+
+    fireEvent.click(screen.getByText("Worship set"));
+    expect(screen.getByRole("button", { name: "Ungroup" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Ungroup" }));
+    await waitFor(() => {
+      expect(ungroup).toHaveBeenCalledWith({ cue: "g" });
+    });
+  });
+
+  it("moves a cue within its group, and stops at the group's edges", async () => {
+    const moveCue = vi.fn(ok);
+    mockCommands({ serviceState: () => nested, moveCue });
+    render(<ServicePanel />);
+
+    await select("Song one");
+    expect(screen.getByRole("button", { name: "Move up" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Move down" }));
+    await waitFor(() => {
+      expect(moveCue).toHaveBeenCalledWith({ cue: "x", before: null });
+    });
+    // "Song two" is last in the group, so it cannot go further down.
+    fireEvent.click(screen.getByText("Song two"));
+    expect(screen.getByRole("button", { name: "Move down" })).toBeDisabled();
+  });
+
+  it("edits how a group starts its cues", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({ serviceState: () => nested, editCue });
+    render(<ServicePanel />);
+    await select("Worship set");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Start the cues inside" }), {
+      target: { value: "sequence" },
+    });
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({
+        cue: "g",
+        change: { type: "groupMode", value: "sequence" },
+      });
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Start again when finished/ }));
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "g", change: { type: "looped", value: true } });
+    });
+  });
+
+  it("adds new cues after the selected one even when it is last in a group", async () => {
+    const addMemo = vi.fn(() => []);
+    mockCommands({ serviceState: () => nested, addMemo });
+    render(<ServicePanel />);
+    await select("Song two");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+
+    await waitFor(() => {
+      expect(addMemo).toHaveBeenCalledWith({ before: "b" });
+    });
+  });
+});
+
+describe("control cues", () => {
+  const withControl = (control: CueView_Serialize): ServiceView_Serialize => ({
+    ...nested,
+    cues: [...nested.cues, control],
+  });
+
+  it("adds a control cue that acts on the selected cue", async () => {
+    const addControl = vi.fn(() => ["new"]);
+    mockCommands({ serviceState: () => nested, addControl });
+    render(<ServicePanel />);
+    await select("Walk-in");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Add control cue" }), {
+      target: { value: "stop" },
+    });
+
+    await waitFor(() => {
+      expect(addControl).toHaveBeenCalledWith({ kind: "stop", target: "a", before: "g" });
+    });
+  });
+
+  it("needs a selected cue to add a control cue", async () => {
+    mockCommands({ serviceState: () => nested });
+    render(<ServicePanel />);
+    await screen.findByText("Walk-in");
+    expect(screen.getByRole("combobox", { name: "Add control cue" })).toBeDisabled();
+  });
+
+  it("says what a control cue does in the list", async () => {
+    mockCommands({ serviceState: () => withControl(controlCue("f", "fade", "a", "Walk-in")) });
+    render(<ServicePanel />);
+
+    expect(await screen.findByText("Fades Walk-in")).toBeInTheDocument();
+  });
+
+  it("warns, in the list and the inspector, when the target was deleted", async () => {
+    mockCommands({ serviceState: () => withControl(controlCue("f", "stop", "gone", null)) });
+    render(<ServicePanel />);
+
+    expect(await screen.findByText(/The cue this acts on was deleted$/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Control f"));
+    expect(screen.getByRole("status")).toHaveTextContent("so it does nothing");
+  });
+
+  it("changes the target from a list of the other cues", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({
+      serviceState: () => withControl(controlCue("f", "stop", "a", "Walk-in")),
+      editCue,
+    });
+    render(<ServicePanel />);
+    await select("Control f");
+
+    const acts = screen.getByRole("combobox", { name: "Acts on" });
+    const options = within(acts)
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(options).toContain("3. Welcome");
+    expect(options).not.toContain("9. Control f");
+
+    fireEvent.change(acts, { target: { value: "b" } });
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "f", change: { type: "target", value: "b" } });
+    });
+  });
+
+  it("only offers cues in the main list as the target of a go-to", async () => {
+    mockCommands({ serviceState: () => withControl(controlCue("f", "goTo", "a", "Walk-in")) });
+    render(<ServicePanel />);
+    await select("Control f");
+
+    const options = within(screen.getByRole("combobox", { name: "Acts on" }))
+      .getAllByRole("option")
+      .map((o) => o.textContent);
+    expect(options).toContain("3. Welcome");
+    expect(options).not.toContain("2.1. Song one");
+  });
+
+  it("edits the settings of a fade cue", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({
+      serviceState: () => withControl(controlCue("f", "fade", "a", "Walk-in")),
+      editCue,
+    });
+    render(<ServicePanel />);
+    await select("Control f");
+
+    const to = screen.getByRole("textbox", { name: /Fade to/ });
+    fireEvent.change(to, { target: { value: "-20" } });
+    fireEvent.blur(to);
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({ cue: "f", change: { type: "fadeTo", value: -20 } });
+    });
+
+    const time = screen.getByRole("textbox", { name: "Fade time (seconds)" });
+    fireEvent.change(time, { target: { value: "8" } });
+    fireEvent.blur(time);
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({
+        cue: "f",
+        change: { type: "fadeDuration", value: 8 },
+      });
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /Stop it when the fade ends/ }));
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({
+        cue: "f",
+        change: { type: "stopWhenDone", value: false },
+      });
+    });
+  });
+
+  it("switches an arm cue between arming and disarming", async () => {
+    const editCue = vi.fn(ok);
+    mockCommands({
+      serviceState: () => withControl(controlCue("f", "arm", "a", "Walk-in")),
+      editCue,
+    });
+    render(<ServicePanel />);
+    await select("Control f");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Action" }), {
+      target: { value: "disarm" },
+    });
+
+    await waitFor(() => {
+      expect(editCue).toHaveBeenCalledWith({
+        cue: "f",
+        change: { type: "armAction", value: false },
+      });
+    });
+  });
+
+  it("shows no audio settings for a control cue", async () => {
+    mockCommands({ serviceState: () => withControl(controlCue("f", "stop", "a", "Walk-in")) });
+    render(<ServicePanel />);
+    await select("Control f");
+
+    expect(screen.queryByRole("slider", { name: "Level" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: /Fade in/ })).toBeNull();
   });
 });

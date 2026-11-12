@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   commands,
   type AppError,
+  type ControlType,
   type CueChangeInput_Deserialize as CueChange,
   type ServiceView_Serialize as ServiceView,
 } from "@/lib/bindings";
@@ -40,6 +41,11 @@ export interface Service {
   addMemo: (before: string | null) => Promise<string[]>;
   /** Asks for audio files, then adds them as cues before `before`. */
   addAudio: (before: string | null) => Promise<string[]>;
+  /** Adds a fade, stop, pause, go-to or arm cue that acts on `target`. */
+  addControl: (kind: ControlType, target: string, before: string | null) => Promise<string[]>;
+  /** Puts main-list cues into a new group. Resolves to the group's id. */
+  groupCues: (cues: string[]) => Promise<string[]>;
+  ungroup: (cue: string) => Promise<boolean>;
 }
 
 /**
@@ -165,6 +171,10 @@ export function useService(): Service {
     renumber: () => succeeded(() => call(commands.renumberCues())),
     duplicateCue: (cue) => created(() => call(commands.duplicateCue(cue))),
     addMemo: (before) => created(() => call(commands.addMemo(before))),
+    addControl: (kind, target, before) =>
+      created(() => call(commands.addControl(kind, target, before))),
+    groupCues: (cues) => created(() => call(commands.groupCues(cues))),
+    ungroup: (cue) => succeeded(() => call(commands.ungroup(cue))),
     addAudio: async (before) => {
       const picked = await attempt(() => call(commands.pickAudioFiles()));
       if (picked?.status !== "ok" || picked.data.length === 0) {

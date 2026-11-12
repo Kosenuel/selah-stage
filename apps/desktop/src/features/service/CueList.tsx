@@ -1,5 +1,7 @@
 import type { CueStatus, ServiceView_Serialize as ServiceView } from "@/lib/bindings";
 
+import { flatten } from "./tree";
+
 const STATUS: Record<CueStatus, { symbol: string; label: string }> = {
   idle: { symbol: "○", label: "Ready" },
   waiting: { symbol: "◔", label: "Waiting" },
@@ -9,15 +11,36 @@ const STATUS: Record<CueStatus, { symbol: string; label: string }> = {
   stopped: { symbol: "■", label: "Stopped" },
 };
 
-/** The cues in order. In edit mode a row can be selected to edit it. */
+const GROUP_MODE = {
+  together: "all at once",
+  sequence: "one after another",
+  shuffle: "one at random",
+} as const;
+
+const CONTROL_VERB = {
+  fade: "Fades",
+  stop: "Stops",
+  pause: "Pauses",
+  goTo: "Moves the playhead to",
+  arm: "Arms or disarms",
+} as const;
+
+export interface SelectModifiers {
+  /** Ctrl or Cmd: add or remove this cue from the selection. */
+  toggle: boolean;
+  /** Shift: select everything from the last click to this cue. */
+  range: boolean;
+}
+
+/** The cues in order, groups showing the cues inside them. */
 export function CueList({
   view,
-  selectedId,
+  selectedIds,
   onSelect,
 }: {
   view: ServiceView | null;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedIds: string[];
+  onSelect: (id: string, modifiers: SelectModifiers) => void;
 }) {
   if (!view || view.cues.length === 0) {
     return (
@@ -31,18 +54,22 @@ export function CueList({
   return (
     <section aria-label={view.title || "Cues"} className="min-h-0 flex-1 overflow-auto">
       <ol className="flex flex-col gap-1">
-        {view.cues.map((cue) => {
+        {flatten(view.cues).map(({ cue, depth }) => {
           const next = cue.id === view.playhead;
-          const selected = view.editing && cue.id === selectedId;
+          const selected = view.editing && selectedIds.includes(cue.id);
           const status = STATUS[cue.status];
           return (
             <li
               key={cue.id}
               aria-current={next ? "step" : undefined}
               aria-selected={view.editing ? selected : undefined}
-              onClick={() => {
+              style={{ marginLeft: `${depth * 28}px` }}
+              onClick={(event) => {
                 if (view.editing) {
-                  onSelect(cue.id);
+                  onSelect(cue.id, {
+                    toggle: event.ctrlKey || event.metaKey,
+                    range: event.shiftKey,
+                  });
                 }
               }}
               className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
@@ -54,10 +81,30 @@ export function CueList({
               } ${view.editing ? "cursor-pointer" : ""}`}
             >
               <span className="w-8 text-sm text-text-faint">{cue.number}</span>
-              <span
-                className={`flex-1 truncate ${cue.armed ? "" : "text-text-faint line-through"}`}
-              >
-                {cue.name}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className={`truncate ${cue.armed ? "" : "text-text-faint line-through"}`}>
+                  {cue.group && <span aria-hidden="true">▾ </span>}
+                  {cue.name}
+                </span>
+                {cue.group && (
+                  <span className="text-xs text-text-faint">
+                    Group: {GROUP_MODE[cue.group.mode]}
+                    {cue.group.looped ? ", repeats" : ""}
+                  </span>
+                )}
+                {cue.control && (
+                  <span
+                    className={`text-xs ${cue.control.targetName === null ? "text-standby" : "text-text-faint"}`}
+                  >
+                    {cue.control.targetName === null ? (
+                      <>
+                        <span aria-hidden="true">⚠ </span>The cue this acts on was deleted
+                      </>
+                    ) : (
+                      `${CONTROL_VERB[cue.control.kind]} ${cue.control.targetName}`
+                    )}
+                  </span>
+                )}
               </span>
               {!cue.armed && <span className="text-xs text-text-faint">Disarmed</span>}
               {next && <span className="text-xs font-semibold text-standby">NEXT</span>}

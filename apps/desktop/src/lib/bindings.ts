@@ -36,6 +36,12 @@ export const commands = {
 	 *  folder into it. Returns the new cue ids.
 	 */
 	addAudio: (paths: string[], before: string | null) => typedError<string[], AppError>(__TAURI_INVOKE("add_audio", { paths, before })),
+	/**  Adds a fade, stop, pause, go-to or arm cue that acts on `target`. */
+	addControl: (kind: ControlType, target: string, before: string | null) => typedError<string[], AppError>(__TAURI_INVOKE("add_control", { kind, target, before })),
+	/**  Puts main-list cues into a new group. Returns the group's id. */
+	groupCues: (cues: string[]) => typedError<string[], AppError>(__TAURI_INVOKE("group_cues", { cues })),
+	/**  Replaces a group with the cues inside it. */
+	ungroup: (cue: string) => typedError<null, AppError>(__TAURI_INVOKE("ungroup", { cue })),
 	renumberCues: () => typedError<null, AppError>(__TAURI_INVOKE("renumber_cues")),
 	undo: () => typedError<null, AppError>(__TAURI_INVOKE("undo")),
 	redo: () => typedError<null, AppError>(__TAURI_INVOKE("redo")),
@@ -151,18 +157,67 @@ export type AudioView_Serialize = {
 	curve: CurveKind,
 };
 
+/**  The kinds of cue that act on another cue. */
+export type ControlType = "fade" | "stop" | "pause" | "goTo" | "arm";
+
+export type ControlView = ControlView_Serialize | ControlView_Deserialize;
+
+export type ControlView_Deserialize = {
+	kind: ControlType,
+	/**  The cue it acts on. */
+	target: string,
+	/**  `null` when that cue has been deleted, so this one does nothing. */
+	targetName?: string | null,
+	/**  Fade cues: the level to fade to (decibels) and how long it takes. */
+	to: number | null,
+	duration: number | null,
+	curve: CurveKind,
+	/**  Fade cues: stop the target once the fade is done. */
+	stopWhenDone: boolean,
+	/**  Arm cues: arms (true) or disarms (false) the target. */
+	arms: boolean,
+};
+
+export type ControlView_Serialize = {
+	kind: ControlType,
+	/**  The cue it acts on. */
+	target: string,
+	/**  `null` when that cue has been deleted, so this one does nothing. */
+	targetName: string | null,
+	/**  Fade cues: the level to fade to (decibels) and how long it takes. */
+	to: number | null,
+	duration: number | null,
+	curve: CurveKind,
+	/**  Fade cues: stop the target once the fade is done. */
+	stopWhenDone: boolean,
+	/**  Arm cues: arms (true) or disarms (false) the target. */
+	arms: boolean,
+};
+
 /**  One property of a cue, and its new value. */
 export type CueChangeInput = CueChangeInput_Serialize | CueChangeInput_Deserialize;
 
 /**  One property of a cue, and its new value. */
 export type CueChangeInput_Deserialize = { type: "name"; value: string } | { type: "number"; value: string } | { type: "notes"; value: string } | { type: "armed"; value: boolean } | { type: "preWait"; value: number | null } | { type: "postWait"; value: number | null } | { type: "follow"; value: FollowMode } | 
 /**  Decibels. Audio cues only. */
-{ type: "level"; value: number | null } | { type: "start"; value: number | null } | { type: "end"; value?: number | null } | { type: "loops"; value?: number | null } | { type: "fadeIn"; value: number | null } | { type: "fadeOut"; value: number | null } | { type: "curve"; value: CurveKind };
+{ type: "level"; value: number | null } | { type: "start"; value: number | null } | { type: "end"; value?: number | null } | { type: "loops"; value?: number | null } | { type: "fadeIn"; value: number | null } | { type: "fadeOut"; value: number | null } | { type: "curve"; value: CurveKind } | 
+/**  The cue a control cue acts on. */
+{ type: "target"; value: string } | 
+/**  Fade cues: the level to fade to, in decibels. */
+{ type: "fadeTo"; value: number | null } | { type: "fadeDuration"; value: number | null } | { type: "stopWhenDone"; value: boolean } | 
+/**  Arm cues: true arms the target, false disarms it. */
+{ type: "armAction"; value: boolean } | { type: "groupMode"; value: GroupType } | { type: "looped"; value: boolean };
 
 /**  One property of a cue, and its new value. */
 export type CueChangeInput_Serialize = { type: "name"; value: string } | { type: "number"; value: string } | { type: "notes"; value: string } | { type: "armed"; value: boolean } | { type: "preWait"; value: number | null } | { type: "postWait"; value: number | null } | { type: "follow"; value: FollowMode } | 
 /**  Decibels. Audio cues only. */
-{ type: "level"; value: number | null } | { type: "start"; value: number | null } | { type: "end"; value: number | null } | { type: "loops"; value: number | null } | { type: "fadeIn"; value: number | null } | { type: "fadeOut"; value: number | null } | { type: "curve"; value: CurveKind };
+{ type: "level"; value: number | null } | { type: "start"; value: number | null } | { type: "end"; value: number | null } | { type: "loops"; value: number | null } | { type: "fadeIn"; value: number | null } | { type: "fadeOut"; value: number | null } | { type: "curve"; value: CurveKind } | 
+/**  The cue a control cue acts on. */
+{ type: "target"; value: string } | 
+/**  Fade cues: the level to fade to, in decibels. */
+{ type: "fadeTo"; value: number | null } | { type: "fadeDuration"; value: number | null } | { type: "stopWhenDone"; value: boolean } | 
+/**  Arm cues: true arms the target, false disarms it. */
+{ type: "armAction"; value: boolean } | { type: "groupMode"; value: GroupType } | { type: "looped"; value: boolean };
 
 /**  Where a cue is in its life, as the UI names it. */
 export type CueStatus = "idle" | "waiting" | "running" | "paused" | "done" | "stopped";
@@ -184,6 +239,11 @@ export type CueView_Deserialize = {
 	follow: FollowMode,
 	/**  Present for audio cues. */
 	audio?: AudioView_Deserialize | null,
+	/**  Present for fade, stop, pause, go-to and arm cues. */
+	control?: ControlView_Deserialize | null,
+	/**  Present for group cues; the cues inside are in `children`. */
+	group?: GroupView | null,
+	children: CueView_Deserialize[],
 };
 
 export type CueView_Serialize = {
@@ -201,6 +261,11 @@ export type CueView_Serialize = {
 	follow: FollowMode,
 	/**  Present for audio cues. */
 	audio: AudioView_Serialize | null,
+	/**  Present for fade, stop, pause, go-to and arm cues. */
+	control: ControlView_Serialize | null,
+	/**  Present for group cues; the cues inside are in `children`. */
+	group: GroupView | null,
+	children: CueView_Serialize[],
 };
 
 /**  The shape of a fade. */
@@ -236,6 +301,21 @@ export type FollowMode =
 "continue" | 
 /**  Start the next cue when this one finishes. */
 "follow";
+
+/**  How the cues in a group start. */
+export type GroupType = 
+/**  All at once. */
+"together" | 
+/**  One after another. */
+"sequence" | 
+/**  One at random each time. */
+"shuffle";
+
+export type GroupView = {
+	mode: GroupType,
+	/**  Starts again when it finishes. */
+	looped: boolean,
+};
 
 /**  Everything the control window shows about the running service. */
 export type ServiceView = ServiceView_Serialize | ServiceView_Deserialize;
@@ -323,6 +403,9 @@ export type MockCommandHandlers = {
     duplicateCue: (args: { cue: string }) => string[] | Promise<string[]>,
     addMemo: (args: { before: string | null }) => string[] | Promise<string[]>,
     addAudio: (args: { paths: string[]; before: string | null }) => string[] | Promise<string[]>,
+    addControl: (args: { kind: ControlType; target: string; before: string | null }) => string[] | Promise<string[]>,
+    groupCues: (args: { cues: string[] }) => string[] | Promise<string[]>,
+    ungroup: (args: { cue: string }) => null | Promise<null>,
     renumberCues: () => null | Promise<null>,
     undo: () => null | Promise<null>,
     redo: () => null | Promise<null>,
@@ -371,6 +454,9 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "duplicate_cue": return mockCommandHandler(mockHandlers.duplicateCue, "duplicate_cue", args);
             case "add_memo": return mockCommandHandler(mockHandlers.addMemo, "add_memo", args);
             case "add_audio": return mockCommandHandler(mockHandlers.addAudio, "add_audio", args);
+            case "add_control": return mockCommandHandler(mockHandlers.addControl, "add_control", args);
+            case "group_cues": return mockCommandHandler(mockHandlers.groupCues, "group_cues", args);
+            case "ungroup": return mockCommandHandler(mockHandlers.ungroup, "ungroup", args);
             case "renumber_cues": return mockCommandHandler(mockHandlers.renumberCues, "renumber_cues", args);
             case "undo": return mockCommandHandler(mockHandlers.undo, "undo", args);
             case "redo": return mockCommandHandler(mockHandlers.redo, "redo", args);

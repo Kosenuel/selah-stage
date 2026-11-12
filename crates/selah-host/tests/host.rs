@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use selah_core::{CueChange, CueId, Edit, EditError, NewAudio};
+use selah_core::{ControlKind, CueChange, CueId, Edit, EditError, GroupMode, NewAudio};
 use selah_engine::CueState;
 use selah_host::{Command, EditFailure, Host, Output, Snapshot, show_from_folder};
 use selah_persist::{SHOW_FILE, load as load_show};
@@ -408,4 +408,107 @@ fn wait_until(what: &str, check: impl Fn() -> bool) {
         assert!(Instant::now() < deadline, "timed out waiting for {what}");
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[test]
+fn a_group_runs_its_children_and_the_snapshot_shows_them_nested() {
+    let (host, _dir, loaded) =
+        loaded_host("group", &[("a.wav", 0.6), ("b.wav", 0.6), ("c.wav", 0.2)]);
+
+    let group = host
+        .edit(Edit::Group {
+            ids: vec![cue_id(&loaded, 0), cue_id(&loaded, 1)],
+        })
+        .unwrap()
+        .created[0];
+    let grouped = wait_for(&host, "the group", |s| s.cues.len() == 2);
+    assert_eq!(
+        grouped.cues[0].group.as_ref().unwrap().mode,
+        GroupMode::Together
+    );
+    assert_eq!(grouped.cues[0].children.len(), 2);
+    assert_eq!(grouped.cues[0].children[0].name, "a");
+
+    host.send(Command::Go);
+    let running = wait_for(&host, "both children to play", |s| {
+        s.cues[0]
+            .children
+            .iter()
+            .all(|c| c.state == CueState::Running)
+    });
+    assert_eq!(running.cues[0].state, CueState::Running);
+    wait_for(&host, "the group to finish", |s| {
+        s.cues[0].state == CueState::Done
+    });
+
+    host.edit(Edit::Change {
+        id: group,
+        change: CueChange::GroupMode(GroupMode::Sequence),
+    })
+    .unwrap();
+    wait_for(&host, "sequence mode", |s| {
+        s.cues[0]
+            .group
+            .as_ref()
+            .is_some_and(|g| g.mode == GroupMode::Sequence)
+    });
+}
+
+#[test]
+fn a_fade_and_stop_cue_work_on_what_is_playing() {
+    let (host, _dir, loaded) = loaded_host("control", &[("long.wav", 10.0)]);
+    let target = cue_id(&loaded, 0);
+    let fade = host
+        .edit(Edit::AddControl {
+            kind: ControlKind::Fade,
+            target,
+            before: None,
+        })
+        .unwrap()
+        .created[0];
+    host.edit(Edit::Change {
+        id: fade,
+        change: CueChange::FadeDuration(0.2),
+    })
+    .unwrap();
+    let with_fade = wait_for(&host, "the fade cue", |s| s.cues.len() == 2);
+    let detail = with_fade.cues[1].control.as_ref().unwrap();
+    assert_eq!(detail.kind, ControlKind::Fade);
+    assert_eq!(detail.target_name.as_deref(), Some("long"));
+    assert!(detail.stop_when_done);
+
+    host.send(Command::Go);
+    wait_for(&host, "the audio to play", |s| {
+        s.cues[0].state == CueState::Running
+    });
+    std::thread::sleep(Duration::from_millis(450));
+    host.send(Command::Go);
+
+    wait_for(&host, "the fade to stop the audio", |s| {
+        s.cues[0].state == CueState::Stopped && s.cues[1].state == CueState::Done
+    });
+}
+
+#[test]
+fn a_control_cue_whose_target_was_deleted_says_so_and_does_nothing() {
+    let (host, _dir, loaded) = loaded_host("dangling", &[("a.wav", 0.2), ("b.wav", 0.2)]);
+    let (a, b) = (cue_id(&loaded, 0), cue_id(&loaded, 1));
+    host.edit(Edit::AddControl {
+        kind: ControlKind::Stop,
+        target: a,
+        before: None,
+    })
+    .unwrap();
+    wait_for(&host, "the stop cue", |s| s.cues.len() == 3);
+
+    host.edit(Edit::Delete { ids: vec![a] }).unwrap();
+
+    let after = wait_for(&host, "the delete", |s| s.cues.len() == 2);
+    assert_eq!(after.cues[1].control.as_ref().unwrap().target_name, None);
+    host.send(Command::Skip);
+    host.send(Command::Go);
+    wait_for(&host, "the stop cue to finish quietly", |s| {
+        s.cues[1].state == CueState::Done
+    });
+    assert_eq!(cue_id(&after, 0), b);
 }

@@ -6,6 +6,7 @@ import type {
   CueView_Serialize as CueView,
   CurveKind,
   FollowMode,
+  GroupType,
 } from "@/lib/bindings";
 
 const FOLLOW: { value: FollowMode; label: string }[] = [
@@ -20,6 +21,28 @@ const CURVES: { value: CurveKind; label: string }[] = [
   { value: "sCurve", label: "Slow at both ends" },
 ];
 
+const GROUP_MODES: { value: GroupType; label: string }[] = [
+  { value: "together", label: "All at once" },
+  { value: "sequence", label: "One after another" },
+  { value: "shuffle", label: "One at random each time" },
+];
+
+const CONTROL_TITLE = {
+  fade: "Fade another cue",
+  stop: "Stop another cue",
+  pause: "Pause another cue",
+  goTo: "Move the playhead",
+  arm: "Arm or disarm another cue",
+} as const;
+
+/** A cue that a control cue can be pointed at. */
+export interface TargetOption {
+  id: string;
+  label: string;
+  /** In the main list, not inside a group. */
+  topLevel: boolean;
+}
+
 type PlayCount = "once" | "forever" | "times";
 
 function playCount(loops: number | null): PlayCount {
@@ -32,12 +55,16 @@ function playCount(loops: number | null): PlayCount {
 /** The settings of the selected cue. Every change goes to the core. */
 export function CueInspector({
   cue,
+  targets,
   onChange,
 }: {
   cue: CueView;
+  targets: TargetOption[];
   onChange: (change: CueChange) => void;
 }) {
   const audio = cue.audio;
+  const control = cue.control;
+  const group = cue.group;
   return (
     <aside
       aria-label={`Settings for ${cue.name}`}
@@ -114,6 +141,116 @@ export function CueInspector({
           />
         )}
       </fieldset>
+
+      {control && (
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-1 text-xs font-semibold tracking-wide text-text-muted uppercase">
+            {CONTROL_TITLE[control.kind]}
+          </legend>
+          <SelectField
+            label="Acts on"
+            value={control.target}
+            options={[
+              ...targets
+                .filter((t) => t.id !== cue.id && (control.kind !== "goTo" || t.topLevel))
+                .map((t) => ({ value: t.id, label: t.label })),
+              ...(control.targetName === null
+                ? [{ value: control.target, label: "(a deleted cue)" }]
+                : []),
+            ]}
+            onChange={(value) => {
+              onChange({ type: "target", value });
+            }}
+          />
+          {control.targetName === null && (
+            <p role="status" className="text-xs text-standby">
+              <span aria-hidden="true">⚠ </span>
+              The cue this acts on was deleted, so it does nothing. Choose another.
+            </p>
+          )}
+          {control.kind === "fade" && (
+            <>
+              <NumberField
+                label="Fade to"
+                unit="dB, −120 is silence"
+                value={control.to}
+                onCommit={(value) => {
+                  if (value !== null) {
+                    onChange({ type: "fadeTo", value });
+                  }
+                }}
+              />
+              <NumberField
+                label="Fade time"
+                unit="seconds"
+                value={control.duration}
+                onCommit={(value) => {
+                  if (value !== null) {
+                    onChange({ type: "fadeDuration", value });
+                  }
+                }}
+              />
+              <SelectField
+                label="Fade shape"
+                value={control.curve}
+                options={CURVES}
+                onChange={(value) => {
+                  onChange({ type: "curve", value });
+                }}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={control.stopWhenDone}
+                  onChange={(e) => {
+                    onChange({ type: "stopWhenDone", value: e.target.checked });
+                  }}
+                />
+                Stop it when the fade ends
+              </label>
+            </>
+          )}
+          {control.kind === "arm" && (
+            <SelectField
+              label="Action"
+              value={control.arms ? "arm" : "disarm"}
+              options={[
+                { value: "arm", label: "Arm it (it will play when reached)" },
+                { value: "disarm", label: "Disarm it (it will be skipped)" },
+              ]}
+              onChange={(value) => {
+                onChange({ type: "armAction", value: value === "arm" });
+              }}
+            />
+          )}
+        </fieldset>
+      )}
+
+      {group && (
+        <fieldset className="flex flex-col gap-3">
+          <legend className="mb-1 text-xs font-semibold tracking-wide text-text-muted uppercase">
+            Group
+          </legend>
+          <SelectField
+            label="Start the cues inside"
+            value={group.mode}
+            options={GROUP_MODES}
+            onChange={(value) => {
+              onChange({ type: "groupMode", value });
+            }}
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={group.looped}
+              onChange={(e) => {
+                onChange({ type: "looped", value: e.target.checked });
+              }}
+            />
+            Start again when finished
+          </label>
+        </fieldset>
+      )}
 
       {audio && (
         <fieldset className="flex flex-col gap-3">

@@ -2,9 +2,9 @@
 
 use std::path::PathBuf;
 
-use selah_core::{FadeCurve, Follow};
+use selah_core::{ControlKind, FadeCurve, Follow, GroupMode};
 use selah_engine::CueState;
-use selah_host::{Command, Snapshot};
+use selah_host::{Command, Snapshot, SnapshotCue};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::State;
@@ -85,6 +85,104 @@ pub struct CueView {
     pub follow: FollowMode,
     /// Present for audio cues.
     pub audio: Option<AudioView>,
+    /// Present for fade, stop, pause, go-to and arm cues.
+    pub control: Option<ControlView>,
+    /// Present for group cues; the cues inside are in `children`.
+    pub group: Option<GroupView>,
+    pub children: Vec<CueView>,
+}
+
+/// The kinds of cue that act on another cue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ControlType {
+    Fade,
+    Stop,
+    Pause,
+    GoTo,
+    Arm,
+}
+
+impl From<ControlKind> for ControlType {
+    fn from(k: ControlKind) -> Self {
+        match k {
+            ControlKind::Fade => Self::Fade,
+            ControlKind::Stop => Self::Stop,
+            ControlKind::Pause => Self::Pause,
+            ControlKind::GoTo => Self::GoTo,
+            ControlKind::Arm => Self::Arm,
+        }
+    }
+}
+
+impl From<ControlType> for ControlKind {
+    fn from(k: ControlType) -> Self {
+        match k {
+            ControlType::Fade => Self::Fade,
+            ControlType::Stop => Self::Stop,
+            ControlType::Pause => Self::Pause,
+            ControlType::GoTo => Self::GoTo,
+            ControlType::Arm => Self::Arm,
+        }
+    }
+}
+
+/// How the cues in a group start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum GroupType {
+    /// All at once.
+    Together,
+    /// One after another.
+    Sequence,
+    /// One at random each time.
+    Shuffle,
+}
+
+impl From<GroupMode> for GroupType {
+    fn from(m: GroupMode) -> Self {
+        match m {
+            GroupMode::Together => Self::Together,
+            GroupMode::Sequence => Self::Sequence,
+            GroupMode::Shuffle => Self::Shuffle,
+        }
+    }
+}
+
+impl From<GroupType> for GroupMode {
+    fn from(m: GroupType) -> Self {
+        match m {
+            GroupType::Together => Self::Together,
+            GroupType::Sequence => Self::Sequence,
+            GroupType::Shuffle => Self::Shuffle,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupView {
+    pub mode: GroupType,
+    /// Starts again when it finishes.
+    pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlView {
+    pub kind: ControlType,
+    /// The cue it acts on.
+    pub target: String,
+    /// `null` when that cue has been deleted, so this one does nothing.
+    pub target_name: Option<String>,
+    /// Fade cues: the level to fade to (decibels) and how long it takes.
+    pub to: f64,
+    pub duration: f64,
+    pub curve: CurveKind,
+    /// Fade cues: stop the target once the fade is done.
+    pub stop_when_done: bool,
+    /// Arm cues: arms (true) or disarms (false) the target.
+    pub arms: bool,
 }
 
 /// What happens to the next cue.
@@ -215,31 +313,7 @@ impl From<Snapshot> for ServiceView {
     fn from(s: Snapshot) -> Self {
         Self {
             title: s.title,
-            cues: s
-                .cues
-                .into_iter()
-                .map(|c| CueView {
-                    id: c.id,
-                    number: c.number,
-                    name: c.name,
-                    status: c.state.into(),
-                    armed: c.armed,
-                    notes: c.notes,
-                    pre_wait: c.pre_wait,
-                    post_wait: c.post_wait,
-                    follow: c.follow.into(),
-                    audio: c.audio.map(|a| AudioView {
-                        file: a.file,
-                        level: a.level,
-                        start: a.start,
-                        end: a.end,
-                        loops: a.loops,
-                        fade_in: a.fade_in,
-                        fade_out: a.fade_out,
-                        curve: a.curve.into(),
-                    }),
-                })
-                .collect(),
+            cues: s.cues.into_iter().map(cue_view).collect(),
             playhead: s.playhead,
             warnings: s
                 .warnings
@@ -349,4 +423,43 @@ pub fn open_show(host: State<'_, HostState>, path: String) -> Result<(), AppErro
 #[specta::specta]
 pub fn save_show(host: State<'_, HostState>) -> Result<(), AppError> {
     send(&host, Command::SaveShow)
+}
+
+fn cue_view(c: SnapshotCue) -> CueView {
+    CueView {
+        id: c.id,
+        number: c.number,
+        name: c.name,
+        status: c.state.into(),
+        armed: c.armed,
+        notes: c.notes,
+        pre_wait: c.pre_wait,
+        post_wait: c.post_wait,
+        follow: c.follow.into(),
+        audio: c.audio.map(|a| AudioView {
+            file: a.file,
+            level: a.level,
+            start: a.start,
+            end: a.end,
+            loops: a.loops,
+            fade_in: a.fade_in,
+            fade_out: a.fade_out,
+            curve: a.curve.into(),
+        }),
+        control: c.control.map(|k| ControlView {
+            kind: k.kind.into(),
+            target: k.target,
+            target_name: k.target_name,
+            to: k.to,
+            duration: k.duration,
+            curve: k.curve.into(),
+            stop_when_done: k.stop_when_done,
+            arms: k.arms,
+        }),
+        group: c.group.map(|g| GroupView {
+            mode: g.mode.into(),
+            looped: g.looped,
+        }),
+        children: c.children.into_iter().map(cue_view).collect(),
+    }
 }

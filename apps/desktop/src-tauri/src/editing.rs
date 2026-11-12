@@ -12,7 +12,7 @@ use specta::Type;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::commands::{CurveKind, FollowMode};
+use crate::commands::{ControlType, CurveKind, FollowMode, GroupType};
 use crate::error::AppError;
 use crate::host::HostState;
 
@@ -67,11 +67,38 @@ pub enum CueChangeInput {
     Curve {
         value: CurveKind,
     },
+    /// The cue a control cue acts on.
+    Target {
+        value: String,
+    },
+    /// Fade cues: the level to fade to, in decibels.
+    FadeTo {
+        value: f64,
+    },
+    FadeDuration {
+        value: f64,
+    },
+    StopWhenDone {
+        value: bool,
+    },
+    /// Arm cues: true arms the target, false disarms it.
+    ArmAction {
+        value: bool,
+    },
+    GroupMode {
+        value: GroupType,
+    },
+    Looped {
+        value: bool,
+    },
 }
 
-impl From<CueChangeInput> for CueChange {
-    fn from(input: CueChangeInput) -> Self {
-        match input {
+impl TryFrom<CueChangeInput> for CueChange {
+    type Error = AppError;
+
+    fn try_from(input: CueChangeInput) -> Result<Self, AppError> {
+        Ok(match input {
+            CueChangeInput::Target { value } => Self::Target(parse_cue(&value)?),
             CueChangeInput::Name { value } => Self::Name(value),
             CueChangeInput::Number { value } => Self::Number(value),
             CueChangeInput::Notes { value } => Self::Notes(value),
@@ -86,7 +113,13 @@ impl From<CueChangeInput> for CueChange {
             CueChangeInput::FadeIn { value } => Self::FadeIn(value),
             CueChangeInput::FadeOut { value } => Self::FadeOut(value),
             CueChangeInput::Curve { value } => Self::Curve(value.into()),
-        }
+            CueChangeInput::FadeTo { value } => Self::FadeTo(value),
+            CueChangeInput::FadeDuration { value } => Self::FadeDuration(value),
+            CueChangeInput::StopWhenDone { value } => Self::StopWhenDone(value),
+            CueChangeInput::ArmAction { value } => Self::ArmAction(value),
+            CueChangeInput::GroupMode { value } => Self::GroupMode(value.into()),
+            CueChangeInput::Looped { value } => Self::Looped(value),
+        })
     }
 }
 
@@ -124,7 +157,7 @@ pub fn edit_cue(
         &host,
         Edit::Change {
             id: parse_cue(&cue)?,
-            change: change.into(),
+            change: change.try_into()?,
         },
     )
     .map(|_| ())
@@ -320,4 +353,48 @@ fn path_of(chosen: Option<tauri_plugin_dialog::FilePath>) -> Result<Option<Strin
                 .map_err(|_| AppError::invalid_input("That location can't be used."))
         })
         .transpose()
+}
+
+/// Adds a fade, stop, pause, go-to or arm cue that acts on `target`.
+#[tauri::command]
+#[specta::specta]
+pub fn add_control(
+    host: State<'_, HostState>,
+    kind: ControlType,
+    target: String,
+    before: Option<String>,
+) -> Result<Vec<String>, AppError> {
+    apply(
+        &host,
+        Edit::AddControl {
+            kind: kind.into(),
+            target: parse_cue(&target)?,
+            before: parse_before(before.as_deref())?,
+        },
+    )
+    .map(|o| ids(&o))
+}
+
+/// Puts main-list cues into a new group. Returns the group's id.
+#[tauri::command]
+#[specta::specta]
+pub fn group_cues(host: State<'_, HostState>, cues: Vec<String>) -> Result<Vec<String>, AppError> {
+    let ids_in = cues
+        .iter()
+        .map(|c| parse_cue(c))
+        .collect::<Result<Vec<_>, _>>()?;
+    apply(&host, Edit::Group { ids: ids_in }).map(|o| ids(&o))
+}
+
+/// Replaces a group with the cues inside it.
+#[tauri::command]
+#[specta::specta]
+pub fn ungroup(host: State<'_, HostState>, cue: String) -> Result<(), AppError> {
+    apply(
+        &host,
+        Edit::Ungroup {
+            id: parse_cue(&cue)?,
+        },
+    )
+    .map(|_| ())
 }

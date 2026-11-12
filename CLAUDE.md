@@ -73,9 +73,20 @@ Two documents define the project:
   Ctrl+S, Delete, Alt+Up/Down (edit mode only; none fire while typing).
   Each panel sits in an `ErrorBoundary` so a drawing fault cannot blank the
   window.
-  Still to do in M1: dragging to reorder, multi-select, group cues and control
-  cues (fade, stop, pause, go-to, arm) in the UI, per-cue notes visible in show
-  mode, a waveform in the inspector, device settings and patch mapping,
+  **Group and control cues** are editable too. `Edit::Group`/`Ungroup`,
+  `Edit::AddControl` (fade, stop, pause, go-to, arm, each aimed at a target
+  cue) and `CueChange` variants for target, fade level and time, stop-when-done,
+  arm/disarm, group mode and looping. Cues at any depth can be changed, moved,
+  duplicated and deleted; a cue placed before a group's child lands inside the
+  group, and a group cannot be put inside itself. A fade aimed at a group
+  reaches every cue in it. Snapshots are a tree (`children`), and a control
+  cue reports `targetName: null` when its target was deleted, so the list and
+  inspector warn and the cue does nothing. The UI shows nested cues, supports
+  Ctrl/Shift multi-select, and has Group, Ungroup, and an "Add control cue"
+  menu that acts on the selected cue.
+  Still to do in M1: dragging to reorder, moving a cue into an existing group
+  or to the end of a group from the UI (only Move up/down within a list works
+  there), per-cue notes visible in show mode, a waveform in the inspector, device settings and patch mapping,
   reconnecting after a device is lost (detected and reported, but not
   recovered), a preload so GO is instant (AUD-9), a recent-shows list, bundle
   export, and relinking missing media (listed but not fixable). Not started in
@@ -786,6 +797,12 @@ Append new entries at the bottom. One line each: date, decision, reason.
 - 2026-11-12: File and folder pickers are opened from Rust through the Tauri
   dialog plugin, not from JavaScript. Reason: no extra JavaScript permission
   surface, and the file copying that follows stays in a crate.
+- 2026-11-12: Edits address cues at any depth by id, and "before" may name a
+  child, which is how a cue is moved into a group. Reason: one rule covers
+  move, add and duplicate for groups, with no separate "move into" edit.
+- 2026-11-12: Deleting a control cue's target leaves the control cue in place,
+  flagged and inert, rather than deleting it. Reason: a deletion must never
+  silently remove other work; undo and re-targeting stay possible.
 - 2026-11-12: The app identifier is `io.github.kosenuel.selahstage`, for now.
   Reason: it is verifiably ours; changing it after a release moves users'
   data, so it must be settled before the first one.

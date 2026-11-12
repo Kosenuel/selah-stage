@@ -533,3 +533,27 @@ fn an_edited_arming_applies_to_the_next_go() {
 
     assert!(rig.sink.calls().is_empty());
 }
+
+#[test]
+fn a_fade_aimed_at_a_group_reaches_every_cue_inside_it() {
+    let (x, y) = (audio("x"), audio("y"));
+    let g = group("g", GroupMode::Together, vec![x.clone(), y.clone()], false);
+    let fade = Cue::new(
+        "fade group",
+        CueKind::Fade {
+            target: g.id,
+            to: -30.0,
+            duration: 2.0,
+            curve: FadeCurve::Linear,
+            stop_when_done: false,
+        },
+    );
+    let mut rig = Rig::new(vec![g, fade]);
+    rig.engine.go();
+    rig.advance(1.0);
+    rig.engine.go();
+
+    let calls = rig.sink.calls();
+    assert!(calls.contains(&Call::Fade(x.id, -30.0)));
+    assert!(calls.contains(&Call::Fade(y.id, -30.0)));
+}

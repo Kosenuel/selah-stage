@@ -5,7 +5,12 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use selah_audio::{AudioEngine, AudioEvent, OfflineBackend, OutputDevice, RunningDevice};
-use selah_core::{CueId, CueKind, Edit, EditError, Editor, FadeCurve, Follow, Outcome, Show};
+use std::collections::HashMap;
+
+use selah_core::{
+    ControlKind, Cue, CueId, CueKind, Edit, EditError, Editor, FadeCurve, Follow, GroupMode,
+    Outcome, Show,
+};
 use selah_engine::{CueState, Engine, EngineConfig, Event, Warning};
 use selah_persist::Autosaver;
 
@@ -101,6 +106,32 @@ pub struct SnapshotCue {
     pub follow: Follow,
     /// Present for audio cues.
     pub audio: Option<AudioDetail>,
+    /// Present for fade, stop, pause, go-to and arm cues.
+    pub control: Option<ControlDetail>,
+    /// Present for group cues, with the cues inside in `children`.
+    pub group: Option<GroupDetail>,
+    pub children: Vec<SnapshotCue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupDetail {
+    pub mode: GroupMode,
+    pub looped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ControlDetail {
+    pub kind: ControlKind,
+    pub target: String,
+    /// `None` when the target has been deleted, so the cue does nothing.
+    pub target_name: Option<String>,
+    // Fade cues only; ignored for the others.
+    pub to: f64,
+    pub duration: f64,
+    pub curve: FadeCurve,
+    pub stop_when_done: bool,
+    /// Arm cues only: arms (true) or disarms (false) the target.
+    pub arms: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -547,43 +578,15 @@ fn build_snapshot(
 ) -> Snapshot {
     let cues = show
         .map(|s| {
+            let names: HashMap<CueId, &str> = s
+                .all_cues()
+                .into_iter()
+                .map(|c| (c.id, c.name.as_str()))
+                .collect();
             s.items
                 .iter()
                 .flat_map(|item| item.cues.iter())
-                .map(|c| SnapshotCue {
-                    id: c.id.as_uuid().to_string(),
-                    number: c.number.clone(),
-                    name: c.name.clone(),
-                    state: engine.state(c.id),
-                    armed: c.armed,
-                    notes: c.notes.clone(),
-                    pre_wait: c.pre_wait,
-                    post_wait: c.post_wait,
-                    follow: c.follow,
-                    audio: match &c.kind {
-                        CueKind::Audio {
-                            file,
-                            level,
-                            start,
-                            end,
-                            loops,
-                            fade_in,
-                            fade_out,
-                            curve,
-                            ..
-                        } => Some(AudioDetail {
-                            file: file.clone(),
-                            level: *level,
-                            start: *start,
-                            end: *end,
-                            loops: *loops,
-                            fade_in: *fade_in,
-                            fade_out: *fade_out,
-                            curve: *curve,
-                        }),
-                        _ => None,
-                    },
-                })
+                .map(|c| snapshot_cue(engine, &names, c))
                 .collect()
         })
         .unwrap_or_default();
@@ -612,5 +615,126 @@ fn build_snapshot(
         editing: !storage.locked,
         can_undo: storage.editor.can_undo(),
         can_redo: storage.editor.can_redo(),
+    }
+}
+
+fn snapshot_cue(
+    engine: &Engine<selah_audio::AudioClock, AudioEngine>,
+    names: &HashMap<CueId, &str>,
+    c: &Cue,
+) -> SnapshotCue {
+    let control = |kind, target: CueId| ControlDetail {
+        kind,
+        target: target.as_uuid().to_string(),
+        target_name: names.get(&target).map(|n| (*n).to_owned()),
+        to: -60.0,
+        duration: 0.0,
+        curve: FadeCurve::EqualPower,
+        stop_when_done: false,
+        arms: true,
+    };
+    let (audio, control, group, children) = match &c.kind {
+        CueKind::Audio {
+            file,
+            level,
+            start,
+            end,
+            loops,
+            fade_in,
+            fade_out,
+            curve,
+            ..
+        } => (
+            Some(AudioDetail {
+                file: file.clone(),
+                level: *level,
+                start: *start,
+                end: *end,
+                loops: *loops,
+                fade_in: *fade_in,
+                fade_out: *fade_out,
+                curve: *curve,
+            }),
+            None,
+            None,
+            Vec::new(),
+        ),
+        CueKind::Fade {
+            target,
+            to,
+            duration,
+            curve,
+            stop_when_done,
+        } => (
+            None,
+            Some(ControlDetail {
+                to: *to,
+                duration: *duration,
+                curve: *curve,
+                stop_when_done: *stop_when_done,
+                ..control(ControlKind::Fade, *target)
+            }),
+            None,
+            Vec::new(),
+        ),
+        CueKind::Stop { target } => (
+            None,
+            Some(control(ControlKind::Stop, *target)),
+            None,
+            Vec::new(),
+        ),
+        CueKind::Pause { target } => (
+            None,
+            Some(control(ControlKind::Pause, *target)),
+            None,
+            Vec::new(),
+        ),
+        CueKind::GoTo { target } => (
+            None,
+            Some(control(ControlKind::GoTo, *target)),
+            None,
+            Vec::new(),
+        ),
+        CueKind::Arm { target, armed } => (
+            None,
+            Some(ControlDetail {
+                arms: *armed,
+                ..control(ControlKind::Arm, *target)
+            }),
+            None,
+            Vec::new(),
+        ),
+        CueKind::Group {
+            mode,
+            looped,
+            children,
+        } => (
+            None,
+            None,
+            Some(GroupDetail {
+                mode: *mode,
+                looped: *looped,
+            }),
+            children
+                .iter()
+                .map(|child| snapshot_cue(engine, names, child))
+                .collect(),
+        ),
+        CueKind::Memo => (None, None, None, Vec::new()),
+    };
+    SnapshotCue {
+        id: c.id.as_uuid().to_string(),
+        number: c.number.clone(),
+        name: c.name.clone(),
+        state: engine.state(c.id),
+        armed: c.armed,
+        notes: c.notes.clone(),
+        pre_wait: c.pre_wait,
+        post_wait: c.post_wait,
+        follow: c.follow,
+        audio,
+        control,
+        group,
+        children,
     }
 }

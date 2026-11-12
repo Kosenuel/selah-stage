@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use selah_core::{Cue, CueId, CueKind, Follow, GroupMode, Seconds, Show};
+use selah_core::{Cue, CueId, CueKind, Decibels, FadeCurve, Follow, GroupMode, Seconds, Show};
 
 use crate::sink::{AudioPlay, AudioSink, Clock, SinkError};
 
@@ -505,7 +505,7 @@ impl<C: Clock, A: AudioSink> Engine<C, A> {
                 curve,
                 ..
             } => {
-                self.audio.fade(*target, *to, *duration, *curve);
+                self.fade_cue(*target, *to, *duration, *curve);
                 if *duration > 0.0 {
                     if let Some(r) = self.rt.get_mut(&id) {
                         r.deadline = Some(now + duration);
@@ -537,6 +537,23 @@ impl<C: Clock, A: AudioSink> Engine<C, A> {
         }
         if cue.follow == Follow::Continue {
             self.schedule_next(id, now + cue.post_wait);
+        }
+    }
+
+    /// Fades a cue. A group has no sound of its own, so its fade reaches every
+    /// cue inside it.
+    fn fade_cue(&mut self, id: CueId, to: Decibels, duration: Seconds, curve: FadeCurve) {
+        let children = self
+            .nodes
+            .get(&id)
+            .map(|n| child_ids(&n.cue))
+            .unwrap_or_default();
+        if children.is_empty() {
+            self.audio.fade(id, to, duration, curve);
+        } else {
+            for child in children {
+                self.fade_cue(child, to, duration, curve);
+            }
         }
     }
 

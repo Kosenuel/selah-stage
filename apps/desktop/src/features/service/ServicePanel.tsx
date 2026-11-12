@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ServiceView_Serialize as ServiceView } from "@/lib/bindings";
+import type { ControlType, ServiceView_Serialize as ServiceView } from "@/lib/bindings";
 
-import { CueInspector } from "./CueInspector";
-import { CueList } from "./CueList";
+import { CueInspector, type TargetOption } from "./CueInspector";
+import { CueList, type SelectModifiers } from "./CueList";
+import { flatten, nextAfter, rangeBetween, siblingsOf } from "./tree";
 import { useService, type Service } from "./useService";
 
 const BUTTON = "border-border-strong bg-surface-raised rounded-lg border px-3 py-1.5 text-sm";
@@ -13,53 +14,104 @@ const DISABLED = "disabled:opacity-40";
 export function ServicePanel() {
   const service = useService();
   const { view, error } = service;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selection, setSelection] = useState<{ ids: string[]; anchor: string | null }>({
+    ids: [],
+    anchor: null,
+  });
 
   const cues = view?.cues ?? [];
-  const index = cues.findIndex((c) => c.id === selectedId);
-  const selected = index >= 0 ? cues[index] : undefined;
+  const rows = flatten(cues);
+  // Ignore selected cues that no longer exist (deleted, or undone away).
+  const selectedIds = selection.ids.filter((id) => rows.some((r) => r.cue.id === id));
+  const only = selectedIds.length === 1 ? rows.find((r) => r.cue.id === selectedIds[0]) : undefined;
+  const selected = only?.cue;
+  const place = selected ? siblingsOf(cues, selected.id) : null;
   const editing = view?.editing ?? true;
 
-  const addAfterSelection = cues[index + 1]?.id ?? null;
-
-  const addAudio = async () => {
-    const [first] = await service.addAudio(addAfterSelection);
-    if (first) {
-      setSelectedId(first);
+  const choose = (ids: string[], anchor: string | null = ids[0] ?? null) => {
+    setSelection({ ids, anchor });
+  };
+  const select = (id: string, modifiers: SelectModifiers) => {
+    if (modifiers.range && selection.anchor) {
+      choose(rangeBetween(rows, selection.anchor, id), selection.anchor);
+    } else if (modifiers.toggle) {
+      const ids = selectedIds.includes(id)
+        ? selectedIds.filter((i) => i !== id)
+        : [...selectedIds, id];
+      choose(ids, id);
+    } else {
+      choose([id], id);
     }
   };
+
+  const insertBefore = selected ? nextAfter(cues, selected.id) : null;
+  const selectFirstOf = (ids: string[]) => {
+    if (ids[0]) {
+      choose([ids[0]]);
+    }
+  };
+
+  const addAudio = async () => {
+    selectFirstOf(await service.addAudio(insertBefore));
+  };
   const addNote = async () => {
-    const [first] = await service.addMemo(addAfterSelection);
-    if (first) {
-      setSelectedId(first);
+    selectFirstOf(await service.addMemo(insertBefore));
+  };
+  const addControl = async (kind: ControlType) => {
+    if (selected) {
+      selectFirstOf(await service.addControl(kind, selected.id, insertBefore));
     }
   };
   const duplicate = async () => {
     if (selected) {
-      const [first] = await service.duplicateCue(selected.id);
-      if (first) {
-        setSelectedId(first);
-      }
+      selectFirstOf(await service.duplicateCue(selected.id));
     }
   };
   const remove = async () => {
-    if (selected) {
-      const neighbour = cues[index + 1]?.id ?? cues[index - 1]?.id ?? null;
-      if (await service.deleteCues([selected.id])) {
-        setSelectedId(neighbour);
-      }
+    if (selectedIds.length === 0) {
+      return;
+    }
+    const last = rows.findLast((r) => selectedIds.includes(r.cue.id));
+    const lastIndex = last ? rows.indexOf(last) : -1;
+    const neighbour =
+      rows.slice(lastIndex + 1).find((r) => !selectedIds.includes(r.cue.id))?.cue.id ??
+      rows.findLast((r) => !selectedIds.includes(r.cue.id))?.cue.id ??
+      null;
+    if (await service.deleteCues(selectedIds)) {
+      choose(neighbour ? [neighbour] : []);
+    }
+  };
+  const group = async () => {
+    selectFirstOf(await service.groupCues(selectedIds));
+  };
+  const ungroup = async () => {
+    if (selected && (await service.ungroup(selected.id))) {
+      choose([]);
     }
   };
   const move = (direction: -1 | 1) => {
-    if (!selected) {
+    if (!selected || !place) {
       return;
     }
+    const { siblings, index } = place;
     if (direction === -1 && index > 0) {
-      void service.moveCue(selected.id, cues[index - 1]?.id ?? null);
-    } else if (direction === 1 && index < cues.length - 1) {
-      void service.moveCue(selected.id, cues[index + 2]?.id ?? null);
+      void service.moveCue(selected.id, siblings[index - 1]?.id ?? null);
+    } else if (direction === 1 && index < siblings.length - 1) {
+      void service.moveCue(selected.id, siblings[index + 2]?.id ?? null);
     }
   };
+  const canMoveUp = !!place && place.index > 0;
+  const canMoveDown = !!place && place.index < place.siblings.length - 1;
+  // Only cues in the main list can be grouped.
+  const groupable =
+    selectedIds.length > 0 &&
+    selectedIds.every((id) => rows.find((r) => r.cue.id === id)?.depth === 0);
+
+  const targets: TargetOption[] = rows.map((r) => ({
+    id: r.cue.id,
+    label: `${r.cue.number}. ${r.cue.name}`,
+    topLevel: r.depth === 0,
+  }));
 
   useGlobalKeys(service, editing, { remove, move });
 
@@ -85,6 +137,43 @@ export function ServicePanel() {
             <button type="button" className={BUTTON} onClick={() => void addNote()}>
               Add note
             </button>
+            <label className="sr-only" htmlFor="add-control">
+              Add control cue
+            </label>
+            <select
+              id="add-control"
+              className={`${BUTTON} ${DISABLED}`}
+              disabled={!selected}
+              value=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  void addControl(e.target.value as ControlType);
+                }
+              }}
+            >
+              <option value="">Add control cue…</option>
+              <option value="fade">Fade the selected cue</option>
+              <option value="stop">Stop the selected cue</option>
+              <option value="pause">Pause the selected cue</option>
+              <option value="goTo">Go to the selected cue</option>
+              <option value="arm">Arm or disarm the selected cue</option>
+            </select>
+            <button
+              type="button"
+              className={`${BUTTON} ${DISABLED}`}
+              disabled={!groupable}
+              onClick={() => void group()}
+            >
+              Group
+            </button>
+            <button
+              type="button"
+              className={`${BUTTON} ${DISABLED}`}
+              disabled={!selected?.group}
+              onClick={() => void ungroup()}
+            >
+              Ungroup
+            </button>
             <button
               type="button"
               className={`${BUTTON} ${DISABLED}`}
@@ -96,7 +185,7 @@ export function ServicePanel() {
             <button
               type="button"
               className={`${BUTTON} ${DISABLED}`}
-              disabled={!selected || index === 0}
+              disabled={!canMoveUp}
               onClick={() => {
                 move(-1);
               }}
@@ -106,7 +195,7 @@ export function ServicePanel() {
             <button
               type="button"
               className={`${BUTTON} ${DISABLED}`}
-              disabled={!selected || index === cues.length - 1}
+              disabled={!canMoveDown}
               onClick={() => {
                 move(1);
               }}
@@ -116,7 +205,7 @@ export function ServicePanel() {
             <button
               type="button"
               className={`${BUTTON} ${DISABLED}`}
-              disabled={!selected}
+              disabled={selectedIds.length === 0}
               onClick={() => void remove()}
             >
               Delete
@@ -132,7 +221,7 @@ export function ServicePanel() {
           </div>
         )}
 
-        <CueList view={view} selectedId={selectedId} onSelect={setSelectedId} />
+        <CueList view={view} selectedIds={selectedIds} onSelect={select} />
 
         {view && view.warnings.length > 0 && (
           <ul aria-label="Warnings" className="flex flex-col gap-1 text-sm">
@@ -182,10 +271,19 @@ export function ServicePanel() {
         <CueInspector
           key={selected.id}
           cue={selected}
+          targets={targets}
           onChange={(change) => {
             void service.edit(selected.id, change);
           }}
         />
+      )}
+      {editing && selectedIds.length > 1 && (
+        <aside
+          aria-label="Selection"
+          className="w-80 shrink-0 rounded-xl border border-border bg-surface p-4 text-sm text-text-muted"
+        >
+          {selectedIds.length} cues selected. You can group, delete, or move on to another cue.
+        </aside>
       )}
     </div>
   );
