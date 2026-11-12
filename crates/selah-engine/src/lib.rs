@@ -1,10 +1,21 @@
-//! The cue engine: playhead, sequencing, waits, follow modes, and the transport
-//! state machine.
+//! The cue engine: playhead, sequencing, waits, follow modes, groups, control
+//! cues, and panic.
 //!
-//! The engine is driven through traits (a clock and an audio sink) rather than
-//! by `selah-audio` directly, so it can be tested with a fake clock and no
-//! devices. It must never depend on `selah-audio`.
+//! The engine never touches a device. It is driven through two traits, a
+//! [`Clock`] and an [`AudioSink`], so it is tested with a fake clock and a
+//! recording sink. It must never depend on `selah-audio`.
 //!
-//! Nothing is implemented yet; see the roadmap in `CLAUDE.md`.
+//! Time moves only when [`Engine::tick`] is called (and inside operator
+//! actions such as [`Engine::go`]); the host calls `tick` often, driven by the
+//! audio clock.
+//!
+//! Not here yet: the undoable edit stack and live editing of a loaded show.
 
 #![forbid(unsafe_code)]
+
+mod engine;
+mod sink;
+pub mod testing;
+
+pub use engine::{CueState, Engine, EngineConfig, Event, Warning};
+pub use sink::{AudioPlay, AudioSink, Clock, SinkError};
