@@ -1,0 +1,15 @@
+# Dependencies and build output
+node_modules
+target
+dist
+pnpm-lock.yaml
+
+# Generated
+apps/desktop/src/lib/bindings.ts
+apps/desktop/src-tauri/gen
+
+# Prose keeps its hand-wrapped lines and tables
+*.md
+
+# Licence text is kept byte-for-byte
+LICENSE

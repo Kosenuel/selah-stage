@@ -1,0 +1,6 @@
+# One pinned toolchain for every machine and CI run, so formatting and clippy
+# results are identical everywhere. Bump deliberately, in its own commit.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

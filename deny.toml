@@ -1,0 +1,34 @@
+# Licence policy for Rust dependencies, checked in CI with cargo-deny.
+# The reasoning is in "Licensing and content rules" in CLAUDE.md.
+#
+# Run locally with: cargo deny check licenses
+
+[graph]
+# What we ship (Windows) and where we develop (Linux).
+targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
+
+[licenses]
+# Permissive licences, plus MPL-2.0 (file-level copyleft, which is compatible
+# with distributing the app under Apache-2.0).
+#
+# GPL, AGPL, and LGPL are deliberately absent. Rust links crates statically,
+# so an LGPL crate does not get the "dynamic linking" allowance that the
+# separate ffmpeg executable does. Do not add one here without the owner's
+# decision recorded in CLAUDE.md.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+# The list covers licences we expect to meet, not only ones in use today.
+unused-allowed-license = "allow"

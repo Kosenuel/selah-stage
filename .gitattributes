@@ -1,0 +1,5 @@
+# One line-ending convention on every platform, so formatters agree on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary

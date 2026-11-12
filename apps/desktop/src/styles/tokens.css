@@ -1,0 +1,64 @@
+/*
+ * Design tokens. Every colour in the app comes from here; components never
+ * hard-code one. Dark is the default because control booths are dark; the
+ * light theme redefines the same names.
+ *
+ * Spacing, radii, and type sizes use Tailwind's scale. Add app-specific ones
+ * to the `@theme` block in index.css rather than writing raw values.
+ */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces, from furthest back to closest. */
+  --canvas: #0e0f13;
+  --surface: #16181d;
+  --surface-raised: #1e2128;
+  --border: #2a2e37;
+  --border-strong: #3d424e;
+
+  /* Text. */
+  --text: #eceef2;
+  --text-muted: #a3a9b6;
+  --text-faint: #7f8696;
+
+  /* Brand. */
+  --accent: #8a8af5;
+  --accent-strong: #5b5bd6;
+  --on-accent: #ffffff;
+  --focus: #a9a9ff;
+
+  /* Status. Always pair these with an icon or a label, never colour alone. */
+  --live: #3ecf8e;
+  --standby: #f5b83d;
+  --danger: #f2555a;
+  --info: #4aa8ff;
+
+  /* What an output shows when nothing is on it. The same in every theme. */
+  --output-backdrop: #000000;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --canvas: #f4f5f8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #dfe2e8;
+  --border-strong: #c2c7d1;
+
+  --text: #14161a;
+  --text-muted: #535a67;
+  --text-faint: #6f7685;
+
+  --accent: #4f4fd0;
+  --accent-strong: #4343bd;
+  --on-accent: #ffffff;
+  --focus: #4f4fd0;
+
+  --live: #0f8554;
+  --standby: #9a6200;
+  --danger: #c5303a;
+  --info: #1569c7;
+}

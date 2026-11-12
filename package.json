@@ -1,0 +1,23 @@
+{
+  "name": "selah-stage",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "tauri": "pnpm --filter @selah/desktop tauri",
+    "bindings": "cargo test -p selah-desktop --lib write_bindings -- --ignored",
+    "format": "cargo fmt --all && prettier --write .",
+    "check": "pnpm check:rust && pnpm check:web",
+    "check:headless": "pnpm check:rust:headless && pnpm check:web",
+    "check:rust": "cargo fmt --all --check && node scripts/check-crate-deps.mjs && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked",
+    "check:rust:headless": "cargo fmt --all --check && node scripts/check-crate-deps.mjs && cargo clippy --workspace --exclude selah-desktop --all-targets --locked -- -D warnings && cargo test --workspace --exclude selah-desktop --locked",
+    "check:web": "prettier --check . && pnpm --filter @selah/desktop check"
+  },
+  "devDependencies": {
+    "prettier": "^3.10.1",
+    "prettier-plugin-tailwindcss": "^0.8.1"
+  }
+}

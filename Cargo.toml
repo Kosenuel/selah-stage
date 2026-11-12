@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "Apache-2.0"
+repository = "https://github.com/Kosenuel/selah-stage"
+publish = false
+
+[workspace.dependencies]
+# Our crates. Dependency direction is enforced by scripts/check-crate-deps.mjs.
+selah-audio = { path = "crates/selah-audio" }
+selah-control = { path = "crates/selah-control" }
+selah-core = { path = "crates/selah-core" }
+selah-engine = { path = "crates/selah-engine" }
+selah-library = { path = "crates/selah-library" }
+selah-media = { path = "crates/selah-media" }
+selah-persist = { path = "crates/selah-persist" }
+
+# Third party. Add here, then reference with `workspace = true`.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# These are warnings locally and errors in `pnpm check` (-D warnings).
+dbg_macro = "warn"
+expect_used = "warn"
+panic = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+todo = "warn"
+undocumented_unsafe_blocks = "warn"
+unimplemented = "warn"
+unwrap_used = "warn"

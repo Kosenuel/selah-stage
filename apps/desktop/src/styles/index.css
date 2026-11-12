@@ -1,0 +1,60 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/*
+ * Map the tokens onto Tailwind utilities (`bg-surface`, `text-text-muted`,
+ * `border-border`). Tailwind's built-in palette is removed on purpose, so a
+ * colour that is not a token cannot be used by accident.
+ */
+@theme inline {
+  --color-*: initial;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-on-accent: var(--on-accent);
+  --color-focus: var(--focus);
+
+  --color-live: var(--live);
+  --color-standby: var(--standby);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+
+  --color-output-backdrop: var(--output-backdrop);
+
+  /* System fonts only: nothing is downloaded, so the app works offline. */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--canvas);
+    color: var(--text);
+    font-family: var(--font-sans);
+    /* This is an app, not a document: text is selectable only where it helps. */
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}

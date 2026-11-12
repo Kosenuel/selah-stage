@@ -1,0 +1,15 @@
+[package]
+name = "selah-audio"
+description = "The audio engine for Selah Stage."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+selah-core = { workspace = true }
