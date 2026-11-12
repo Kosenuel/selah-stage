@@ -19,6 +19,12 @@ export const commands = {
 	/**  Fades everything out; pressed again, stops at once. */
 	panicStop: () => typedError<null, AppError>(__TAURI_INVOKE("panic_stop")),
 	resetShow: () => typedError<null, AppError>(__TAURI_INVOKE("reset_show")),
+	/**  Opens a saved show from its folder. Changes to it are saved automatically. */
+	openShow: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("open_show", { path })),
+	/**  Saves the show now. The first save also turns on autosave. */
+	saveShow: () => typedError<null, AppError>(__TAURI_INVOKE("save_show")),
+	/**  Arms or disarms a cue. */
+	setArmed: (cue: string, armed: boolean) => typedError<null, AppError>(__TAURI_INVOKE("set_armed", { cue, armed })),
 };
 
 /* Types */
@@ -99,6 +105,8 @@ export type CueView = {
 	number: string,
 	name: string,
 	status: CueStatus,
+	/**  A disarmed cue does nothing when it is reached, but GO still moves on. */
+	armed: boolean,
 };
 
 export type DeviceView = DeviceView_Serialize | DeviceView_Deserialize;
@@ -137,6 +145,12 @@ export type ServiceView_Deserialize = {
 	peaks: (number | null)[],
 	underruns: number,
 	device: DeviceView_Deserialize,
+	/**  The show's folder, once it is saved. */
+	location?: string | null,
+	/**  Why the last save failed, in plain words. */
+	saveProblem?: string | null,
+	/**  Something to tell the operator about how the show was opened. */
+	notice?: string | null,
 };
 
 /**  Everything the control window shows about the running service. */
@@ -150,6 +164,12 @@ export type ServiceView_Serialize = {
 	peaks: (number | null)[],
 	underruns: number,
 	device: DeviceView_Serialize,
+	/**  The show's folder, once it is saved. */
+	location: string | null,
+	/**  Why the last save failed, in plain words. */
+	saveProblem: string | null,
+	/**  Something to tell the operator about how the show was opened. */
+	notice: string | null,
 };
 
 export type WarningView = {
@@ -177,6 +197,9 @@ export type MockCommandHandlers = {
     skip: () => null | Promise<null>,
     panicStop: () => null | Promise<null>,
     resetShow: () => null | Promise<null>,
+    openShow: (args: { path: string }) => null | Promise<null>,
+    saveShow: () => null | Promise<null>,
+    setArmed: (args: { cue: string; armed: boolean }) => null | Promise<null>,
 };
 
 /**
@@ -210,6 +233,9 @@ export function mockCommands(handlers: Partial<MockCommandHandlers> = {}): void 
             case "skip": return mockCommandHandler(mockHandlers.skip, "skip", args);
             case "panic_stop": return mockCommandHandler(mockHandlers.panicStop, "panic_stop", args);
             case "reset_show": return mockCommandHandler(mockHandlers.resetShow, "reset_show", args);
+            case "open_show": return mockCommandHandler(mockHandlers.openShow, "open_show", args);
+            case "save_show": return mockCommandHandler(mockHandlers.saveShow, "save_show", args);
+            case "set_armed": return mockCommandHandler(mockHandlers.setArmed, "set_armed", args);
             default: throw new Error(`No mock handler registered for command '${cmd}'`);
         }
     }, { shouldMockEvents: true });

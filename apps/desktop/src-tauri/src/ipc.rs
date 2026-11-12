@@ -23,7 +23,10 @@ pub fn builder() -> Builder<tauri::Wry> {
             commands::go,
             commands::skip,
             commands::panic_stop,
-            commands::reset_show
+            commands::reset_show,
+            commands::open_show,
+            commands::save_show,
+            commands::set_armed
         ])
         // A failed call can carry our `AppError` or a failure from Tauri itself
         // (an unknown command, a bad argument), and the two look alike in

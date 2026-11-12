@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use selah_audio::{AudioEngine, AudioEvent, OfflineBackend, OutputDevice, RunningDevice};
 use selah_core::{CueId, Show};
 use selah_engine::{CueState, Engine, EngineConfig, Event, Warning};
+use selah_persist::Autosaver;
 
 /// Where sound goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,9 +23,23 @@ pub enum Output {
 /// What the UI and other threads can ask of the host.
 #[derive(Debug)]
 pub enum Command {
+    /// A show that has not been saved anywhere yet, with its media folder.
     Load {
         show: Box<Show>,
         media_root: PathBuf,
+    },
+    /// A show read from its folder. Edits to it are autosaved there.
+    Open {
+        show: Box<Show>,
+        folder: PathBuf,
+        recovered_from: Option<PathBuf>,
+    },
+    /// Writes the show to its folder (or its media folder, if never saved) and
+    /// turns on autosave.
+    SaveShow,
+    SetArmed {
+        cue: CueId,
+        armed: bool,
     },
     Go,
     Skip,
@@ -57,6 +72,7 @@ pub struct SnapshotCue {
     pub number: String,
     pub name: String,
     pub state: CueState,
+    pub armed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +92,12 @@ pub struct Snapshot {
     pub peaks: Vec<f32>,
     pub underruns: u32,
     pub device: DeviceStatus,
+    /// The show's folder once it is saved; `None` while it exists only in memory.
+    pub location: Option<String>,
+    /// Why the last save or autosave failed, in words for an operator.
+    pub save_problem: Option<String>,
+    /// Something the operator should know about how the show was opened.
+    pub notice: Option<String>,
 }
 
 /// A handle to the running host. Dropping it stops the thread.
@@ -88,6 +110,19 @@ pub struct Host {
 const LOOP_INTERVAL: Duration = Duration::from_millis(5);
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(40);
 const MAX_WARNINGS: usize = 20;
+/// Autosave waits for this much quiet after a change, so a burst of edits is
+/// one write.
+const AUTOSAVE_QUIET: Duration = Duration::from_millis(500);
+
+/// What the loop knows about where the show lives.
+#[derive(Default)]
+struct Storage {
+    media_root: Option<PathBuf>,
+    location: Option<PathBuf>,
+    autosaver: Option<Autosaver>,
+    save_problem: Option<String>,
+    notice: Option<String>,
+}
 
 impl Host {
     pub fn spawn(output: Output) -> Result<Self, HostError> {
@@ -235,6 +270,7 @@ fn drive(
     shared: &Mutex<Snapshot>,
 ) {
     let mut show: Option<Show> = None;
+    let mut storage = Storage::default();
     let mut warnings: Vec<SnapshotWarning> = Vec::new();
     let mut last_snapshot = Instant::now() - SNAPSHOT_INTERVAL;
     loop {
@@ -264,10 +300,51 @@ fn drive(
                     show: loaded,
                     media_root,
                 } => {
-                    engine.audio_mut().set_media_root(media_root);
+                    engine.audio_mut().set_media_root(media_root.clone());
                     engine.load(&loaded);
                     warnings.clear();
+                    storage = Storage {
+                        media_root: Some(media_root),
+                        ..Storage::default()
+                    };
                     show = Some(*loaded);
+                }
+                Command::Open {
+                    show: opened,
+                    folder,
+                    recovered_from,
+                } => {
+                    engine.audio_mut().set_media_root(folder.clone());
+                    engine.load(&opened);
+                    warnings.clear();
+                    for missing in selah_persist::missing_media(&opened, &folder) {
+                        warnings.push(SnapshotWarning {
+                            cue: cue_name(Some(&opened), missing.cue),
+                            message: describe(&Warning::MissingMedia { file: missing.file }),
+                        });
+                    }
+                    storage = Storage {
+                        media_root: Some(folder.clone()),
+                        autosaver: Some(Autosaver::start(folder.clone(), AUTOSAVE_QUIET)),
+                        location: Some(folder),
+                        notice: recovered_from.map(|_| {
+                            "The show file was damaged, so the latest backup was opened. Check your recent changes.".to_owned()
+                        }),
+                        ..Storage::default()
+                    };
+                    show = Some(*opened);
+                }
+                Command::SaveShow => save_now(show.as_ref(), &mut storage),
+                Command::SetArmed { cue, armed } => {
+                    if let Some(current) = show.as_mut()
+                        && let Some(target) = current.cue_mut(cue)
+                    {
+                        target.armed = armed;
+                        engine.set_armed(cue, armed);
+                        if let Some(saver) = &storage.autosaver {
+                            saver.submit(current.clone());
+                        }
+                    }
                 }
                 Command::Go => engine.go(),
                 Command::Skip => engine.skip(),
@@ -306,9 +383,30 @@ fn drive(
 
         if last_snapshot.elapsed() >= SNAPSHOT_INTERVAL {
             last_snapshot = Instant::now();
-            let snapshot = build_snapshot(engine, show.as_ref(), &warnings, &status);
+            let snapshot = build_snapshot(engine, show.as_ref(), &warnings, &status, &storage);
             *shared.lock().unwrap_or_else(PoisonError::into_inner) = snapshot;
         }
+    }
+}
+
+/// Saves now, to the show's folder or, for a show never saved, its media
+/// folder. A first save turns autosave on.
+fn save_now(show: Option<&Show>, storage: &mut Storage) {
+    let (Some(show), Some(folder)) = (
+        show,
+        storage.location.clone().or(storage.media_root.clone()),
+    ) else {
+        return;
+    };
+    match selah_persist::save(&folder, show) {
+        Ok(()) => {
+            storage.save_problem = None;
+            if storage.autosaver.is_none() {
+                storage.autosaver = Some(Autosaver::start(folder.clone(), AUTOSAVE_QUIET));
+            }
+            storage.location = Some(folder);
+        }
+        Err(error) => storage.save_problem = Some(error.to_string()),
     }
 }
 
@@ -337,6 +435,7 @@ fn build_snapshot(
     show: Option<&Show>,
     warnings: &[SnapshotWarning],
     status: &DeviceStatus,
+    storage: &Storage,
 ) -> Snapshot {
     let cues = show
         .map(|s| {
@@ -348,6 +447,7 @@ fn build_snapshot(
                     number: c.number.clone(),
                     name: c.name.clone(),
                     state: engine.state(c.id),
+                    armed: c.armed,
                 })
                 .collect()
         })
@@ -360,5 +460,14 @@ fn build_snapshot(
         peaks: engine.audio_mut().peaks(),
         underruns: engine.audio_mut().meters().underruns(),
         device: status.clone(),
+        location: storage.location.as_ref().map(|p| p.display().to_string()),
+        save_problem: storage.save_problem.clone().or_else(|| {
+            storage
+                .autosaver
+                .as_ref()
+                .and_then(Autosaver::last_error)
+                .map(|e| e.to_string())
+        }),
+        notice: storage.notice.clone(),
     }
 }

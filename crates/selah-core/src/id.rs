@@ -19,6 +19,19 @@ macro_rules! id_type {
             pub fn as_uuid(&self) -> Uuid {
                 self.0
             }
+
+            /// For ids that crossed a boundary as text.
+            pub fn from_uuid(uuid: Uuid) -> Self {
+                Self(uuid)
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = uuid::Error;
+
+            fn from_str(text: &str) -> Result<Self, Self::Err> {
+                text.parse().map(Self)
+            }
         }
 
         impl Default for $name {

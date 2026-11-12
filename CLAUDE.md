@@ -47,18 +47,29 @@ Two documents define the project:
   (Esc), cue states, next marker, warnings, output meter. If no sound device
   can be opened the app still starts and says why. The UI polls every 100 ms;
   events and channels are not used yet.
-  Still to do in M1: the undoable edit stack and live editing in the cue
-  engine, show files and autosave (`selah-persist`), building shows in the UI
-  (cue list editing and inspector, show mode), device settings and patch
-  mapping, reconnecting after a device is lost (detected and reported, but not
-  recovered), and a preload so GO is instant (AUD-9). Not started in audio:
+  `selah-persist` reads and writes show folders: atomic saves (temp file,
+  sync, rename), a rolling set of 20 backups in `backups/`, forward migrations
+  over plain JSON, recovery from the newest readable backup when `show.json` is
+  damaged, a debounced background `Autosaver`, and `missing_media`. The host
+  can open a show, save it, and autosave edits (the one edit so far is arming
+  and disarming a cue). The UI has Open show, Load folder, Save show, a
+  per-cue Armed checkbox, and says where the show lives and whether saving
+  failed.
+  Still to do in M1: the undoable edit stack and the rest of live editing
+  (add, move, delete, rename cues; waits, levels, fades, trims), the cue
+  inspector and show mode, device settings and patch mapping, reconnecting
+  after a device is lost (detected and reported, but not recovered), a preload
+  so GO is instant (AUD-9), a recent-shows list, bundle export, and relinking
+  missing media (it is listed but not fixable yet). Not started in audio:
   loudness measurement, a preview patch, ASIO.
-  **Real playback has never been heard on any machine.** Try it on Windows:
-  `pnpm tauri dev`, type a folder of WAV or MP3 files, Load, press Space.
+  **Tried on Windows by the owner (2026-11-12):** playback, the safety keys,
+  and error messages worked as described. That predates show files; the saving
+  and opening flow has only been tested by automated tests.
 - **What has been verified.** On Linux: the full gate, a production build,
-  the dev workflow, and a launch on a virtual display. On Windows, in CI only:
-  the full gate and a build of the app. Nobody has yet launched the app on a
-  real Windows machine, so its appearance and behaviour there are untested.
+  the dev workflow, and a launch on a virtual display. On Windows, in CI: the
+  full gate and a build of the app. On the owner's Windows machine: audio
+  playback and the operator panel, as of the host commit. To try a new build,
+  run the "Windows build" workflow (Actions tab) and download its installer.
 - **`main` exists** (created 2026-11-12 from the M0 commit). Sessions in
   restricted environments may still be limited to an assigned branch; see
   [Branches and commits](#branches-and-commits).
@@ -361,8 +372,11 @@ list of everything exposed.
 
 ## Show files and persistence
 
-- A show is a folder: `show.json` plus `media/`. Export zips the folder into a
+- A show is a folder: `show.json` plus its media. Cue `file` paths are
+  relative to that folder. Export (not built yet) zips the folder into a
   single portable bundle.
+- `show.json` is the `Show` type from `selah-core`, serialised as camelCase
+  JSON. Backups live in `backups/` beside it and are not part of the show.
 - `show.json` carries `schema_version`. Every schema change ships with a
   forward migration and a fixture of the old version in `fixtures/`. Never
   break the ability to open an older show.
@@ -493,7 +507,11 @@ body.
 - Front end: Vitest and Testing Library, with tests beside the code as
   `*.test.ts(x)`. Stub the core with `mockCommands`. Playwright for the main
   operator flows once they exist.
-- Persistence: round-trip and migration tests against fixtures.
+- Persistence: round-trip and migration tests against fixtures. **A change to
+  the `Show` format** bumps `CURRENT_SCHEMA_VERSION`, adds an entry to
+  `MIGRATIONS` in `selah-persist`, and adds `fixtures/shows/v<N>/show.json`
+  for the *old* version; `tests/fixtures.rs` opens every fixture. Fixtures are
+  excluded from Prettier and must never be reformatted.
 - Rust tests live in a `#[cfg(test)] mod tests` in the file they test, with
   one exception: **the shell crate's tests go in
   `apps/desktop/src-tauri/tests/`**. A unit-test program for that crate links
@@ -723,6 +741,12 @@ Append new entries at the bottom. One line each: date, decision, reason.
 - 2026-11-12: The UI polls `service_state` every 100 ms for now. Reason:
   simplest correct start; switch to events and channels when load or latency
   makes it worth it.
+- 2026-11-12: Shows are plain JSON in a folder, written atomically with
+  rolling backups, and autosaved 500 ms after the last change. Reason: a
+  power cut or crash must never lose or corrupt a service (REL-7, FILE-2).
+- 2026-11-12: Opening a show is validated in the shell command so errors
+  reach the operator immediately; the host thread receives an already-loaded
+  show. Reason: host commands are fire-and-forget.
 - 2026-11-12: The app identifier is `io.github.kosenuel.selahstage`, for now.
   Reason: it is verifiably ours; changing it after a release moves users'
   data, so it must be settled before the first one.

@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use selah_core::CueId;
 use selah_engine::CueState;
 use selah_host::{Command, Snapshot};
 use serde::Serialize;
@@ -74,6 +75,8 @@ pub struct CueView {
     pub number: String,
     pub name: String,
     pub status: CueStatus,
+    /// A disarmed cue does nothing when it is reached, but GO still moves on.
+    pub armed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -108,6 +111,12 @@ pub struct ServiceView {
     pub peaks: Vec<f32>,
     pub underruns: u32,
     pub device: DeviceView,
+    /// The show's folder, once it is saved.
+    pub location: Option<String>,
+    /// Why the last save failed, in plain words.
+    pub save_problem: Option<String>,
+    /// Something to tell the operator about how the show was opened.
+    pub notice: Option<String>,
 }
 
 impl From<Snapshot> for ServiceView {
@@ -122,6 +131,7 @@ impl From<Snapshot> for ServiceView {
                     number: c.number,
                     name: c.name,
                     status: c.state.into(),
+                    armed: c.armed,
                 })
                 .collect(),
             playhead: s.playhead,
@@ -142,6 +152,9 @@ impl From<Snapshot> for ServiceView {
                 audible: s.device.audible && !s.device.lost,
                 problem: s.device.error,
             },
+            location: s.location,
+            save_problem: s.save_problem,
+            notice: s.notice,
         }
     }
 }
@@ -202,4 +215,38 @@ pub fn panic_stop(host: State<'_, HostState>) -> Result<(), AppError> {
 #[specta::specta]
 pub fn reset_show(host: State<'_, HostState>) -> Result<(), AppError> {
     send(&host, Command::Reset)
+}
+
+/// Opens a saved show from its folder. Changes to it are saved automatically.
+#[tauri::command]
+#[specta::specta]
+pub fn open_show(host: State<'_, HostState>, path: String) -> Result<(), AppError> {
+    let folder = PathBuf::from(path.trim());
+    let loaded =
+        selah_persist::load(&folder).map_err(|e| AppError::invalid_input(e.to_string()))?;
+    send(
+        &host,
+        Command::Open {
+            show: Box::new(loaded.show),
+            folder,
+            recovered_from: loaded.recovered_from,
+        },
+    )
+}
+
+/// Saves the show now. The first save also turns on autosave.
+#[tauri::command]
+#[specta::specta]
+pub fn save_show(host: State<'_, HostState>) -> Result<(), AppError> {
+    send(&host, Command::SaveShow)
+}
+
+/// Arms or disarms a cue.
+#[tauri::command]
+#[specta::specta]
+pub fn set_armed(host: State<'_, HostState>, cue: String, armed: bool) -> Result<(), AppError> {
+    let cue: CueId = cue
+        .parse()
+        .map_err(|_| AppError::invalid_input("That cue can't be found."))?;
+    send(&host, Command::SetArmed { cue, armed })
 }

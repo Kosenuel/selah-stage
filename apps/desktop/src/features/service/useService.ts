@@ -16,6 +16,9 @@ export interface Service {
   panic: () => void;
   reset: () => void;
   loadFolder: (path: string) => void;
+  openShow: (path: string) => void;
+  saveShow: () => void;
+  setArmed: (cue: string, armed: boolean) => void;
 }
 
 /**
@@ -84,6 +87,15 @@ export function useService(): Service {
     },
     loadFolder: (path) => {
       act(() => call(commands.loadFolder(path)));
+    },
+    openShow: (path) => {
+      act(() => call(commands.openShow(path)));
+    },
+    saveShow: () => {
+      act(() => call(commands.saveShow()));
+    },
+    setArmed: (cue, armed) => {
+      act(() => call(commands.setArmed(cue, armed)));
     },
   };
 }

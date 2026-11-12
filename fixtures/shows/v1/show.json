@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "meta": { "title": "Fixture service" },
+  "items": [
+    {
+      "id": "0192f0a0-0000-7000-8000-000000000001",
+      "title": "Worship",
+      "kind": "song",
+      "notes": "",
+      "plannedLength": null,
+      "cues": [
+        {
+          "id": "0192f0a0-0000-7000-8000-000000000002",
+          "number": "1",
+          "name": "Hymn",
+          "notes": "",
+          "color": null,
+          "armed": true,
+          "preWait": 0.0,
+          "postWait": 0.0,
+          "follow": "none",
+          "kind": {
+            "type": "audio",
+            "file": "hymn.wav",
+            "level": 0.0,
+            "start": 0.0,
+            "end": null,
+            "loops": null,
+            "fadeIn": 0.0,
+            "fadeOut": 0.0,
+            "curve": "equalPower",
+            "patches": []
+          }
+        },
+        {
+          "id": "0192f0a0-0000-7000-8000-000000000003",
+          "number": "2",
+          "name": "Notes",
+          "notes": "Use the quiet ending.",
+          "color": null,
+          "armed": true,
+          "preWait": 0.0,
+          "postWait": 0.0,
+          "follow": "none",
+          "kind": { "type": "memo" }
+        }
+      ]
+    }
+  ],
+  "patches": [
+    { "id": "0192f0a0-0000-7000-8000-000000000004", "name": "Main", "channels": 2 }
+  ]
+}

@@ -13,3 +13,6 @@ apps/desktop/src-tauri/gen
 
 # Licence text is kept byte-for-byte
 LICENSE
+
+# Old-format show fixtures stay exactly as they were written
+fixtures/shows

@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::cue::Cue;
-use crate::id::{ItemId, PatchId};
+use crate::cue::CueKind;
+use crate::id::{CueId, ItemId, PatchId};
 
 /// Bumped on every change to the saved format; each bump needs a migration
 /// in `selah-persist` and a fixture of the old version.
@@ -90,6 +91,14 @@ impl Show {
         }
     }
 
+    /// The cue with this id, wherever it sits, for editing.
+    pub fn cue_mut(&mut self, id: CueId) -> Option<&mut Cue> {
+        self.items
+            .iter_mut()
+            .flat_map(|item| item.cues.iter_mut())
+            .find_map(|cue| find_mut(cue, id))
+    }
+
     /// Every top-level and nested cue in plan order.
     pub fn all_cues(&self) -> Vec<&Cue> {
         let mut out = Vec::new();
@@ -102,10 +111,19 @@ impl Show {
     }
 }
 
+fn find_mut(cue: &mut Cue, id: CueId) -> Option<&mut Cue> {
+    if cue.id == id {
+        return Some(cue);
+    }
+    match &mut cue.kind {
+        CueKind::Group { children, .. } => children.iter_mut().find_map(|c| find_mut(c, id)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cue::CueKind;
 
     #[test]
     fn a_new_show_has_a_main_patch_and_current_version() {
@@ -113,6 +131,38 @@ mod tests {
         assert_eq!(show.schema_version, CURRENT_SCHEMA_VERSION);
         assert_eq!(show.patches.len(), 1);
         assert_eq!(show.patches[0].name, "Main");
+    }
+
+    #[test]
+    fn cue_mut_finds_top_level_and_nested_cues() {
+        use crate::cue::GroupMode;
+        let child = Cue::new("child", CueKind::Memo);
+        let child_id = child.id;
+        let group = Cue::new(
+            "group",
+            CueKind::Group {
+                mode: GroupMode::Together,
+                children: vec![child],
+                looped: false,
+            },
+        );
+        let group_id = group.id;
+        let mut show = Show::new("t");
+        let mut item = Item::new("i", ItemKind::General);
+        item.cues.push(group);
+        show.items.push(item);
+
+        show.cue_mut(child_id).unwrap().armed = false;
+        assert!(
+            !show
+                .all_cues()
+                .iter()
+                .find(|c| c.id == child_id)
+                .unwrap()
+                .armed
+        );
+        assert!(show.cue_mut(group_id).is_some());
+        assert!(show.cue_mut(CueId::new()).is_none());
     }
 
     #[test]

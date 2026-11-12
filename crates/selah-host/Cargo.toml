@@ -15,6 +15,7 @@ workspace = true
 selah-audio = { workspace = true }
 selah-core = { workspace = true }
 selah-engine = { workspace = true }
+selah-persist = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 

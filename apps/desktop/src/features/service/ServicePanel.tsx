@@ -22,7 +22,8 @@ export function ServicePanel() {
 
   return (
     <div className="flex h-full w-full max-w-3xl flex-col gap-4">
-      <FolderForm onLoad={service.loadFolder} />
+      <FolderForm onLoadFolder={service.loadFolder} onOpenShow={service.openShow} />
+      {view && <ShowLine view={view} onSave={service.saveShow} />}
 
       {error && (
         <p role="alert" className="rounded-lg border border-danger px-4 py-3 text-sm text-danger">
@@ -32,7 +33,7 @@ export function ServicePanel() {
 
       {view && <DeviceLine view={view} />}
 
-      <CueList view={view} />
+      <CueList view={view} onSetArmed={service.setArmed} />
 
       {view && view.warnings.length > 0 && (
         <ul aria-label="Warnings" className="flex flex-col gap-1 text-sm">
@@ -80,25 +81,31 @@ export function ServicePanel() {
   );
 }
 
-function FolderForm({ onLoad }: { onLoad: (path: string) => void }) {
+function FolderForm({
+  onLoadFolder,
+  onOpenShow,
+}: {
+  onLoadFolder: (path: string) => void;
+  onOpenShow: (path: string) => void;
+}) {
   const [path, setPath] = useState("");
-  const submit = (event: SyntheticEvent) => {
+  const run = (action: (path: string) => void) => (event: SyntheticEvent) => {
     event.preventDefault();
     if (path.trim() !== "") {
-      onLoad(path);
+      action(path);
     }
   };
   return (
-    <form onSubmit={submit} className="flex gap-2">
+    <form onSubmit={run(onOpenShow)} className="flex gap-2">
       <label className="flex-1">
-        <span className="sr-only">Folder of audio files</span>
+        <span className="sr-only">Folder</span>
         <input
           type="text"
           value={path}
           onChange={(e) => {
             setPath(e.target.value);
           }}
-          placeholder="Folder of audio files, for example C:\Music\Sunday"
+          placeholder="A show folder, or a folder of audio files, for example C:\Music\Sunday"
           className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text select-text"
         />
       </label>
@@ -106,9 +113,51 @@ function FolderForm({ onLoad }: { onLoad: (path: string) => void }) {
         type="submit"
         className="rounded-lg border border-border-strong bg-surface-raised px-4 text-sm"
       >
-        Load
+        Open show
+      </button>
+      <button
+        type="button"
+        onClick={run(onLoadFolder)}
+        className="rounded-lg border border-border-strong bg-surface-raised px-4 text-sm"
+      >
+        Load folder
       </button>
     </form>
+  );
+}
+
+function ShowLine({ view, onSave }: { view: ServiceView; onSave: () => void }) {
+  if (view.cues.length === 0) {
+    return null;
+  }
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <div className="flex items-center gap-3 text-text-muted">
+        <span className="flex-1 truncate">
+          {view.location
+            ? `Saved in ${view.location}. Changes are saved automatically.`
+            : "Not saved yet. Save it to keep your changes."}
+        </span>
+        <button
+          type="button"
+          onClick={onSave}
+          className="rounded-lg border border-border-strong bg-surface-raised px-3 py-1"
+        >
+          Save show
+        </button>
+      </div>
+      {view.notice && (
+        <p role="status" className="text-standby">
+          <span aria-hidden="true">⚠ </span>
+          {view.notice}
+        </p>
+      )}
+      {view.saveProblem && (
+        <p role="alert" className="text-danger">
+          {view.saveProblem}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -136,11 +185,17 @@ function DeviceLine({ view }: { view: ServiceView }) {
   );
 }
 
-function CueList({ view }: { view: ServiceView | null }) {
+function CueList({
+  view,
+  onSetArmed,
+}: {
+  view: ServiceView | null;
+  onSetArmed: (cue: string, armed: boolean) => void;
+}) {
   if (!view || view.cues.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-text-muted">
-        No cues yet. Load a folder of audio files to try the engine.
+        No cues yet. Open a saved show, or load a folder of audio files.
       </p>
     );
   }
@@ -159,7 +214,22 @@ function CueList({ view }: { view: ServiceView | null }) {
               }`}
             >
               <span className="w-8 text-sm text-text-faint">{cue.number}</span>
-              <span className="flex-1 truncate">{cue.name}</span>
+              <span
+                className={`flex-1 truncate ${cue.armed ? "" : "text-text-faint line-through"}`}
+              >
+                {cue.name}
+              </span>
+              <label className="flex items-center gap-1 text-xs text-text-muted">
+                <input
+                  type="checkbox"
+                  aria-label={`Armed: ${cue.name}`}
+                  checked={cue.armed}
+                  onChange={(e) => {
+                    onSetArmed(cue.id, e.target.checked);
+                  }}
+                />
+                Armed
+              </label>
               {next && <span className="text-xs font-semibold text-standby">NEXT</span>}
               <span className="flex items-center gap-2 text-sm text-text-muted">
                 <span aria-hidden="true">{status.symbol}</span>

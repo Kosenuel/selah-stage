@@ -3029,6 +3029,7 @@ dependencies = [
  "selah-audio",
  "selah-core",
  "selah-engine",
+ "selah-persist",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -3052,6 +3053,9 @@ name = "selah-persist"
 version = "0.1.0"
 dependencies = [
  "selah-core",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
