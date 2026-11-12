@@ -74,9 +74,10 @@ or add a song. Tools built around a fixed sequence make the operator scramble
 to catch up.
 
 **Windows is under-served.** The best-known cue-based show controller runs
-only on macOS. The popular purpose-built multitrack players run on Apple
-devices. Churches that own Windows PCs either buy new hardware or make do
-with general-purpose music software.
+only on macOS. The popular purpose-built multitrack players are made for
+Apple devices, and we found no Windows version of them. Churches that own
+Windows PCs either buy new hardware or make do with general-purpose music
+software.
 
 **Budgets and connectivity are limited.** Many churches cannot justify
 several subscriptions, run on donated PCs, and have no dependable internet in
@@ -441,7 +442,7 @@ A look is a reusable style for text on an output.
 
 | ID | Requirement | Priority | Milestone |
 |---|---|---|---|
-| OUT-1 | Output roles are main, stage, and lower third. Each is assigned to a display or switched off. | Must | M2 |
+| OUT-1 | Output roles are main and stage, joined by lower third in M3 (OUT-8). Each is assigned to a display or switched off. | Must | M2 |
 | OUT-2 | Setup shows an identifying label on every display and remembers the assignment on that machine. | Must | M2 |
 | OUT-3 | If a display disconnects, its output is parked and never appears on the operator's screen. It returns when the display does. | Must | M2 |
 | OUT-4 | Every output composites four layers, bottom to top: background, media, text, overlay. | Must | M2 |
