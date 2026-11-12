@@ -18,8 +18,9 @@ true rather than leaving them to mislead the next session.
   marked "target" is the agreed design, not existing code.
 - The first job is milestone M0 (scaffold). Whoever does it must make the
   [commands](#commands) section real and correct it if anything differs.
-- Stack and architecture were agreed with the owner on 2026-11-12. Product
-  licensing (open or closed source) is still undecided; see
+- Stack and architecture were agreed with the owner on 2026-11-12. The product
+  will be open source, with paid offerings possible later. The specific licence
+  is not chosen yet and there is no `LICENSE` file; see
   [Licensing](#licensing-and-content-rules).
 
 ## Who it is for
@@ -381,9 +382,13 @@ TypeScript type check, lint, and tests.
 
 ## Licensing and content rules
 
-- Product licensing is undecided. Until it is, **add no GPL or AGPL
-  dependencies**. MIT, Apache-2.0, BSD, MPL-2.0, and dynamically used LGPL are
-  fine.
+- The product will be **open source**, and the owner may charge for it or for
+  a paid edition in future. The specific licence is not chosen yet. Do not add
+  a `LICENSE` file or licence headers until the owner picks one.
+- To keep every future option open (including a paid or dual-licensed
+  edition), **add no GPL or AGPL dependencies**. MIT, Apache-2.0, BSD,
+  MPL-2.0, and dynamically used LGPL are fine. Revisit this rule only if the
+  owner chooses a GPL-family licence and records it in the decision log.
 - ffmpeg must be an **LGPL build** (no `--enable-gpl`, no `--enable-nonfree`),
   shipped as a separate executable and credited in the about screen. That
   means no libx264 or libx265; encode H.264 with the Windows Media Foundation
@@ -464,12 +469,16 @@ Append new entries at the bottom. One line each: date, decision, reason.
 - 2026-11-12: Two-level navigation (GO between cues, next/previous within a
   presentation cue). Reason: lyrics must follow the worship leader without
   disturbing the cue list.
+- 2026-11-12: The product is open source, possibly with paid offerings later;
+  licence not yet chosen. Reason: owner's decision. GPL and AGPL dependencies
+  stay banned so a paid edition remains possible.
 
 ## Open questions
 
 Raise these with the owner before building on an assumption.
 
-- Open source or closed source, and under which licence?
+- Which open-source licence, and whether outside contributors must sign a
+  contributor agreement (needed if a paid or dual-licensed edition is wanted).
 - Time-stretch and pitch-shift library for multitracks.
 - Which lyric and service-planning integrations matter most, and their terms.
 - Whether a native video player is needed, and if so libmpv or a custom one.
