@@ -35,18 +35,3 @@ impl AppError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The UI depends on this exact JSON shape; changing it is an IPC change.
-    #[test]
-    fn serialises_to_the_shape_the_ui_expects() {
-        let json = serde_json::to_value(AppError::internal("Something went wrong.")).unwrap();
-        assert_eq!(
-            json,
-            serde_json::json!({ "kind": "internal", "message": "Something went wrong." })
-        );
-    }
-}

@@ -11,6 +11,13 @@ publish.workspace = true
 [lints]
 workspace = true
 
+[lib]
+# Tests for this crate live in `tests/`, not in `#[cfg(test)]` modules. A unit
+# test program links Tauri's Windows libraries but gets no app manifest, so
+# Windows refuses to start it. `build.rs` attaches one to `tests/` programs.
+test = false
+doctest = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -30,10 +37,10 @@ tracing = { workspace = true }
 tracing-subscriber = "0.3"
 
 # The binding generator is still a release candidate, and its crates must
-# match each other exactly. Bump all three together.
+# match each other exactly. Bump these and `specta-typescript` together.
 specta = { version = "=2.0.0-rc.28", features = ["derive"] }
-specta-typescript = "0.0.15"
 tauri-specta = { version = "=2.0.0-rc.28", features = ["derive", "typescript"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+specta-typescript = "0.0.15"

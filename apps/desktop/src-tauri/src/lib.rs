@@ -6,7 +6,7 @@
 
 mod commands;
 mod error;
-mod ipc;
+pub mod ipc;
 
 use std::process::ExitCode;
 

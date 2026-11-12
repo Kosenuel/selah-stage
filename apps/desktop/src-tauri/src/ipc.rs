@@ -2,7 +2,8 @@
 //!
 //! The TypeScript side of this contract is generated, never hand-written.
 //! After changing a command, its arguments, or a type it returns, run
-//! `pnpm bindings` and commit `apps/desktop/src/lib/bindings.ts`.
+//! `pnpm bindings` and commit `apps/desktop/src/lib/bindings.ts`. The test in
+//! `tests/ipc_contract.rs` fails when that file is out of date.
 
 use tauri_specta::{Builder, ErrorHandlingMode, collect_commands};
 
@@ -23,55 +24,4 @@ pub fn builder() -> Builder<tauri::Wry> {
         .error_handling(ErrorHandlingMode::ResultUnknown)
         // Typed `mockCommands` helper for front-end tests.
         .mocks()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use specta_typescript::Typescript;
-
-    use super::*;
-
-    const COMMITTED: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/bindings.ts");
-
-    /// Fails when the committed bindings no longer match the Rust types.
-    #[test]
-    fn bindings_are_up_to_date() {
-        let fresh_path =
-            std::env::temp_dir().join(format!("selah-bindings-{}.ts", std::process::id()));
-        export_bindings(&fresh_path).unwrap();
-        let fresh = std::fs::read_to_string(&fresh_path).unwrap();
-        let _ = std::fs::remove_file(&fresh_path);
-
-        let committed = std::fs::read_to_string(COMMITTED).unwrap_or_default();
-
-        assert!(
-            normalise(&fresh) == normalise(&committed),
-            "apps/desktop/src/lib/bindings.ts is out of date. Run `pnpm bindings` and commit the result."
-        );
-    }
-
-    /// Regenerates the committed bindings. Run with `pnpm bindings`.
-    #[test]
-    #[ignore = "writes into the source tree; run through `pnpm bindings`"]
-    fn write_bindings() {
-        export_bindings(Path::new(COMMITTED)).unwrap();
-    }
-
-    /// Writes the TypeScript bindings for the whole IPC surface to `path`.
-    fn export_bindings(path: &Path) -> Result<(), String> {
-        // The generated helpers trip our stricter unused-code checks, so the
-        // file opts out of type checking. Its exported types still apply to
-        // every caller.
-        let typescript = Typescript::default().header("// @ts-nocheck");
-        builder()
-            .export(typescript, path)
-            .map_err(|error| error.to_string())
-    }
-
-    /// Checkouts on Windows may convert line endings.
-    fn normalise(text: &str) -> String {
-        text.replace("\r\n", "\n")
-    }
 }

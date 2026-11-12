@@ -8,7 +8,7 @@
   },
   "scripts": {
     "tauri": "pnpm --filter @selah/desktop tauri",
-    "bindings": "cargo test -p selah-desktop --lib write_bindings -- --ignored",
+    "bindings": "cargo test -p selah-desktop --test ipc_contract write_bindings -- --ignored",
     "format": "cargo fmt --all && prettier --write .",
     "check": "pnpm check:rust && pnpm check:web",
     "check:headless": "pnpm check:rust:headless && pnpm check:web",
